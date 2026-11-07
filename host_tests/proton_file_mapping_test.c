@@ -47,6 +47,34 @@ int main(void) {
         assert(!proton_private_read_fallback(fd, flags, sibling, selected));
         assert(!proton_private_read_fallback(fd, flags, alias, "/storage/Users/currentUser/Download/com.vintage.pomelopro/SteamLinuxARM64/library/steamapps/common/Other"));
     }
+    /* Steam can install in either the shared Download library or its private
+     * drive_c library. Resolve aliases only within the selected library. */
+    const char *libraries[] = {
+        "/storage/Users/currentUser/Download/com.vintage.pomelopro/SteamLinuxARM64/library/steamapps/common/",
+        "/storage/media/100/local/files/Docs/Download/com.vintage.pomelopro/SteamLinuxARM64/library/steamapps/common/",
+        "/data/storage/el2/base/files/.wine/drive_c/SteamLinuxARM64/library/steamapps/common/",
+        "/data/app/el2/100/base/com.vintage.pomelopro/files/.wine/drive_c/SteamLinuxARM64/library/steamapps/common/"
+    };
+    for (unsigned selected_alias = 0; selected_alias < 4; ++selected_alias) {
+        char selected[512];
+        snprintf(selected, sizeof(selected), "%sDARK SOULS REMASTERED", libraries[selected_alias]);
+        for (unsigned mapped_alias = 0; mapped_alias < 4; ++mapped_alias) {
+            char mapped[1024];
+            snprintf(mapped, sizeof(mapped), "%sDARK SOULS REMASTERED/DarkSoulsRemastered.exe", libraries[mapped_alias]);
+            assert(proton_private_read_fallback(fd, flags, mapped, selected) ==
+                   (selected_alias / 2 == mapped_alias / 2));
+            assert(!proton_private_read_fallback(fd, MAP_SHARED | MAP_FIXED, mapped, selected));
+            assert(!proton_private_read_fallback(fd, MAP_PRIVATE, mapped, selected));
+            assert(!proton_private_read_fallback(fd, flags, mapped, NULL));
+        }
+        char sibling[1024], escaped[1024];
+        snprintf(sibling, sizeof(sibling), "%s-other/game.exe", selected);
+        snprintf(escaped, sizeof(escaped), "%s/../Other/game.exe", selected);
+        assert(!proton_private_read_fallback(fd, flags, sibling, selected));
+        assert(!proton_private_read_fallback(fd, flags, escaped, selected));
+        assert(!proton_private_read_fallback(fd, flags,
+            "/data/app/el2/100/base/com.vintage.other/files/.wine/drive_c/SteamLinuxARM64/library/steamapps/common/DARK SOULS REMASTERED/game.exe", selected));
+    }
     image[132] = image[133] = 0;
     assert(pwrite(fd, image, sizeof(image), 0) == sizeof(image));
     /* Data files need the same force-exec-safe private mapping as images. */

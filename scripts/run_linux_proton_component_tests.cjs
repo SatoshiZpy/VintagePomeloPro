@@ -69,6 +69,7 @@ const deps = {
   }},
   './ManagedSmokePayloadService': {ensureSmokeDirectory:()=>true,readSmokeText:name=>exists(name)?fs.readFileSync(name,'utf8'):''}
 };
+deps['./LinuxProtonGraphics'] = {ensureLinuxProtonGraphics:async()=>{}};
 deps['@kit.NetworkKit'] = {http:{RequestMethod:{GET:'GET'},HttpDataType:{STRING:0},createHttp:()=>({
   request:async()=>({responseCode:200,result:JSON.stringify(remoteCatalog ?? catalog())}),destroy(){}
 })}};

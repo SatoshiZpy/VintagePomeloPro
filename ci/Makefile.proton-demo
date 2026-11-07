@@ -1,0 +1,11 @@
+# Independent PE fixture only; no HAP/native-runtime replacement.
+CC = x86_64-w64-mingw32-gcc
+.PHONY: proton-x64-d3d11
+proton-x64-d3d11: proton-x64-d3d11.exe
+proton-x64-d3d11.exe: proton_x64_d3d11_cube.c winehua_d3d_switch_cube.c
+	$(CC) -O2 -Wall -Wextra -Werror -static-libgcc -Wl,--no-insert-timestamp proton_x64_d3d11_cube.c -o $@ -ladvapi32 -ldxgi -ldxguid -luser32 -lgdi32 -lshell32 -lm
+
+# Diagnostic GNU proxy only; pair with the verified native-game-support Venus.
+CLANG = /apps/harmony/sdk/default/openharmony/native/llvm/bin/clang
+native-memory-proxy.so: proton_native_memory_proxy.c
+	$(CLANG) --target=aarch64-linux-gnu -O2 -Wall -Wextra -Werror -shared -fPIC -nostdlib -fuse-ld=lld -Wl,-soname,libproton_vulkan.so $< -o $@

@@ -65,7 +65,7 @@ function run(name,exe,args) {
 }
 run('sdk-source',node,[path.join(root,'scripts/run_arkts_source_tests.cjs'),sdk,...selected.map(p=>path.resolve(root,p))]);
 const startup=['wine_startup','wine_upgrade_guard','wine_managed_cpu','host_window_task','deck_launch_feedback','linux_steam_window_host','edge_window'];
-const steam=['linux_steam_download','linux_proton_component','linux_proton_bootstrap','linux_steam_game_launch','linux_steam_supervisor','linux_steam_deck','steam_startup_diagnostics'];
+const steam=['linux_steam_download','linux_proton_component','linux_proton_graphics','linux_proton_bootstrap','linux_steam_game_launch','linux_steam_supervisor','linux_steam_deck','steam_startup_diagnostics'];
 for(const name of [...startup,...(scope==='core'?steam:[])])run(name,node,[`scripts/run_${name}_tests.cjs`,ts]);
 for(const name of ['wine_mono',...(scope==='core'?['ci_app_only','ci_release']:[])])run(name,python,[`host_tests/${name}_test.py`]);
 if(scope==='core') {

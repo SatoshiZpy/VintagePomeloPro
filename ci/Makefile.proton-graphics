@@ -1,0 +1,19 @@
+# Focused native build: all source objects of the affected OHOS GNU child and
+# GNU adapters are rebuilt. Unchanged Wine/Mesa binaries retain their provenance.
+ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST)))/..)
+OUT ?= /data/proton-graphics-build
+GNU_CC ?= /usr/bin/aarch64-linux-gnu-gcc
+SDK ?= /apps/harmony/sdk/default/openharmony
+GNU_LINK ?= /data/proton-graphics-link
+ARCHIVE ?= /data/GE-Proton11-11-aarch64.tar.gz
+.PHONY: proton-x64-graphics
+proton-x64-graphics:
+	python3 $(ROOT)/scripts/build_linux_proton_x64_graphics.py --cc $(GNU_CC) --sdk $(SDK) --build-dir $(OUT) --link-dir $(GNU_LINK) --archive $(ARCHIVE)
+
+# Isolated candidate assembly after the focused native build. Does not change
+# scripts/local_hap.py guards or adopt this candidate as an app-only baseline.
+.PHONY: hap-proton-x64
+hap-proton-x64:
+	python3 scripts/local_proton_graphics_hap.py _prepare
+	/apps/harmony/bin/hvigorw --mode module -p product=default -p buildMode=release assembleHap --no-daemon
+	python3 scripts/local_proton_graphics_hap.py _verify

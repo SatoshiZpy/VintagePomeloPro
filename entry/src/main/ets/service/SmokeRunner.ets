@@ -507,7 +507,7 @@ export class SmokeRunner {
         return;
       }
     }
-    if (stage === 'native-vulkan' || stage === 'native-present' || stage === 'gl-shared' || stage === 'd3d9-x86' || stage === 'dxvk11-x86' || gameTrial || stage === 'glx' || stage === 'window' || stage === 'window-controls') {
+    if (stage === 'native-vulkan' || stage === 'native-present' || stage === 'gl-shared' || stage === 'd3d9-x86' || stage === 'dxvk11-x86' || stage === 'dxvk11-x64' || gameTrial || stage === 'glx' || stage === 'window' || stage === 'window-controls') {
       // A hidden NativeImage consumer can exhaust its queue. Exercise the
       // actual visible desktop, using the same phone/tablet presentation as
       // normal launches, without changing persisted window preferences.
@@ -563,7 +563,7 @@ export class SmokeRunner {
         stage: result.status, message: 'GNU Vulkan queue and optional presentation submission; receiver evidence verifies consumption' }], driveC);
       return;
     }
-    if (stage === 'native-present' || stage === 'gl-shared' || stage === 'd3d9-x86' || stage === 'dxvk11-x86' || gameTrial) {
+    if (stage === 'native-present' || stage === 'gl-shared' || stage === 'd3d9-x86' || stage === 'dxvk11-x86' || stage === 'dxvk11-x64' || gameTrial) {
       await this.finishSuite(request, [{ schemaVersion: 1, runId: request.runId,
         testId: 'gnu-shared-present-submission',
         status: result.graphicsTransportSubmitted && result.childExitVerified ? 'PASS' : 'FAIL',
