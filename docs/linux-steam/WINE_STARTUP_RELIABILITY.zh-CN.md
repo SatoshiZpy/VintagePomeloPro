@@ -22,9 +22,24 @@ prefix 的完成标记仍为 `wineboot-init-request`，缺少 WOW6432Node Shell 
 
 验证：Mono 回归 7 项、现有运行时组件回归 4 项、CI preflight 回归 1 项通过；
 锁定源码、设备实际 ARM64/i386 安装器与官方 MSI 的配套检查通过。
-尚未完成新 HAP 构建或设备初始化复测：本机没有 `winehua-dev` 镜像，设备写入
-等待授权。额外的 source-build contract 测试在 macOS 下使用 Mach-O fixture，
-不满足其 Linux ELF 假设，不能作为本次构建通过证据。
+用户授权后，通过 `hdc file send -b com.vintage.pomelopro` 补入官方 10.4.1 MSI，
+再回读验证上述 SHA-256。保留旧 MSI、现有 prefix、游戏及用户数据；未重装 HAP。
+组件就位后完整停止并启动 App，17:47:09 开始的冷启动在 51 秒内观察到 prefix
+版本标记写入、未完成标记移除、四项原生/WOW6432Node Shell COM 注册齐全，
+注册表 Mono `DisplayVersion=10.4.1`，`windows/mono/mono-2.0` 已安装。
+随后再次完整重启 App，Windows 记事本在融合模式中正常显示。命令提示符进程虽
+启动但没有可见窗口，因此可见 Win32 窗口验收使用记事本，不宣称命令提示符通过。
+本次验证是修复被中断 prefix 的恢复启动，不是卸载清空后的全新安装测试。
+
+另观察到 Steam 入口报“Linux Steam 的 Wine 窗口需要现有虚拟桌面模式”：2in1
+默认融合模式与该入口限制不符，发生在 Wine 初始化完成后，属于独立问题；没有
+为本次测试更改持久桌面模式。设备有界日志与截图保存在本地忽略目录
+`.hvigor/outputs/mono-startup-20261107/`，不上传共享日志或注册表。
+
+完整新 HAP 尚未验证：本机没有 `winehua-dev` 镜像，推送触发的 CI 构建仍进行中。
+CI clean-checkout preflight 已通过。额外的 source-build contract 测试在 macOS
+下使用 Mach-O fixture，不满足其 Linux ELF 假设；未修改的基线也同样失败，
+不能作为本次本地构建通过证据。
 
 2026-10-21，分支 `main_proton_steamarm64`，基线 `e5c43c4a`。本记录与首初始化修复、已有 Deck 和 Linux Steam 稳定性改动一并保存到源码提交。
 
