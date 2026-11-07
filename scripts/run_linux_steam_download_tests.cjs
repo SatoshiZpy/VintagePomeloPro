@@ -128,6 +128,7 @@ async function main() {
   assert.deepEqual(calls,['bytes=0-4194303',`bytes=4194304-${large.length-1}`]);
   await parallelCases();
   await slowConnectionCases();
+  await allSourcesSlowCase();
   let paused = new download.LinuxSteamComponentDownload();
   const pausePath = path.join(temporary,'paused.zip');
   responses=[{body:bytes.subarray(0,5),hook:()=>paused.pause()}];calls=[];
@@ -543,5 +544,48 @@ async function slowConnectionCases() {
     assert.deepEqual(fs.readFileSync(dest),payload);assert.equal(timers.size,0,'watchdog timers are cleared');
   }
   console.log('PASS: 21 KiB/s and stalls after a fast start both switch source at a bounded window and preserve downloaded bytes');
+}
+async function allSourcesSlowCase() {
+  let now=0,id=0;const timers=new Map(),blockSources=new Set();
+  const setTimer=(fn,ms)=>{const key=++id;timers.set(key,{at:now+ms,fn});return key;};
+  const flush=async()=>{for(let i=0;i<30;i++)await Promise.resolve();};
+  const payload=crypto.randomBytes(9*1024*1024),item={...archive,bytes:payload.length,sha256:sha(payload)};
+  const wire={RequestMethod:{GET:'GET'},createHttp(){
+    const events={};let delivery;
+    return {on:(k,f)=>events[k]=f,off:k=>delete events[k],destroy:()=>{if(delivery)timers.delete(delivery);},
+      requestInStream(url,options){
+        const match=/^bytes=(\d+)-(\d+)$/.exec(options.header.range);assert.ok(match);
+        const start=Number(match[1]),end=Number(match[2]),length=end-start+1;
+        assert.ok(length<=1048576,'slow fallback must remain bounded parallel ranges, not a 4 MiB serial request');
+        events.headersReceive({'status-line':'HTTP/2 206','content-range':`bytes ${start}-${end}/${payload.length}`});
+        return new Promise(resolve=>{
+          const deliver=()=>{events.dataReceive(Uint8Array.from(payload.subarray(start,end+1)).buffer);events.dataEnd();resolve(206);};
+          if(length<=262144)deliver();
+          else {blockSources.add(new URL(url).hostname);delivery=setTimer(deliver,10000);}
+        });
+      }};
+  }};
+  const clock={setTimeout:setTimer,clearTimeout:key=>timers.delete(key)};
+  const ranges=load('service/LinuxSteamParallelDownload.ets',{
+    '@kit.NetworkKit':{http:wire},'@kit.CoreFileKit':{fileIo:io},'../model/LinuxSteamDownloadModels':model
+  },clock);
+  const api=load('service/LinuxSteamComponentDownload.ets',{
+    '@kit.NetworkKit':{http:wire},'@kit.CoreFileKit':{fileIo:io},'./ConfigurationFiles':config,
+    '../model/LinuxSteamDownloadModels':model,'./LinuxSteamParallelDownload':ranges
+  },clock);
+  const dest=path.join(temporary,'all-sources-slow.zip');let finished=false,failure;
+  const work=new api.LinuxSteamComponentDownload().fetch(item,dest,()=>{}).then(()=>{finished=true;},e=>{finished=true;failure=e;});
+  await flush();
+  for(let tick=0;tick<120&&!finished;tick++) {
+    now+=1000;
+    for(const [key,timer] of [...timers].sort((a,b)=>a[1].at-b[1].at)) {
+      if(timer.at<=now&&timers.has(key)){timers.delete(key);timer.fn();}
+    }
+    await flush();
+  }
+  assert.ok(finished,'all slow routes must still make bounded progress');await work;if(failure)throw failure;
+  assert.equal(blockSources.size,3,'compare other routes before accepting sustained low throughput');
+  assert.deepEqual(fs.readFileSync(dest),payload);assert.equal(timers.size,0);
+  console.log('PASS: if all official sources are slow, keep parallel transfers on the final route without serial restart');
 }
 main().catch(e=>{console.error(e);process.exitCode=1;}).finally(()=>fs.rmSync(temporary,{recursive:true,force:true}));

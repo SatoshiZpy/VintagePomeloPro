@@ -40,7 +40,7 @@ export class LinuxSteamParallelDownload {
   }
 
   private async range(archive: LinuxSteamDownloadArchive, source: number, start: number, end: number,
-    group: RangeGroup, progress: (received: number) => void, probe: boolean): Promise<ArrayBuffer> {
+    group: RangeGroup, progress: (received: number) => void, probe: boolean, allowSlow: boolean = false): Promise<ArrayBuffer> {
     this.check();
     if (group.cancelled) throw new LinuxSteamDownloadError('CANCELLED', '下载连接已取消');
     const request = http.createHttp();
@@ -96,7 +96,7 @@ export class LinuxSteamParallelDownload {
       sample = received; slowTimer = setTimeout(sampleSpeed, 8000);
     };
     const deadline = setTimeout((): void => { fail('TIMEOUT', '下载连接超时，将尝试其他官方线路'); }, probe ? 15000 : 120000);
-    if (!probe) slowTimer = setTimeout(sampleSpeed, 8000);
+    if (!probe && !allowSlow) slowTimer = setTimeout(sampleSpeed, 8000);
     try {
       request.on('headersReceive', headers); request.on('dataReceive', data); request.on('dataEnd', endData);
       const url = SOURCES[source] + archive.url.substring(archive.url.lastIndexOf('/') + 1);
@@ -183,7 +183,9 @@ export class LinuxSteamParallelDownload {
                 (received: number): void => {
                   counts[index] = received;
                   progress(base + counts.reduce((sum: number, count: number): number => sum + count, 0));
-                }, false);
+                // If every route is slow, keep the last one parallel instead
+                // of repeatedly discarding work and reverting to one stream.
+                }, false, excluded.size === SOURCES.length - 1);
               return { source, bytes, error: null };
             } catch (error) {
               group.cancel();
