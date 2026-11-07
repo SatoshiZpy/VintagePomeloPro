@@ -5,6 +5,11 @@ proton-x64-d3d11: proton-x64-d3d11.exe
 proton-x64-d3d11.exe: proton_x64_d3d11_cube.c winehua_d3d_switch_cube.c
 	$(CC) -O2 -Wall -Wextra -Werror -static-libgcc -Wl,--no-insert-timestamp proton_x64_d3d11_cube.c -o $@ -ladvapi32 -ldxgi -ldxguid -luser32 -lgdi32 -lshell32 -lm
 
+.PHONY: proton-x64-network
+proton-x64-network: proton-x64-network.exe
+proton-x64-network.exe: proton_x64_network_probe.c
+	$(CC) -O2 -Wall -Wextra -Werror -mwindows -static-libgcc -Wl,--no-insert-timestamp $< -o $@ -lws2_32 -ldnsapi -lwinhttp -ladvapi32
+
 # Diagnostic GNU proxy only; pair with the verified native-game-support Venus.
 CLANG = /apps/harmony/sdk/default/openharmony/native/llvm/bin/clang
 native-memory-proxy.so: proton_native_memory_proxy.c

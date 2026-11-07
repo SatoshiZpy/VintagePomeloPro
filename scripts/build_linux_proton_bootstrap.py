@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 NAMES = ('dwmapi.dll', 'dwrite.dll', 'lsass.exe', 'mswsock.dll', 'oleacc.dll',
          'psapi.dll', 'uiautomationcore.dll', 'wevtsvc.dll', 'wsock32.dll',
          'msvcp140_2.dll', 'vcruntime140_1.dll',
-         'dxva2.dll', 'jsproxy.dll', 'mscoree.dll', 'normaliz.dll', 'pdh.dll', 'winhttp.dll', 'wldap32.dll')
+         'dxva2.dll', 'jsproxy.dll', 'mscoree.dll', 'normaliz.dll', 'pdh.dll', 'winhttp.dll', 'wldap32.dll', 'schannel.dll', 'rsaenh.dll')
 
 
 def sha(path, algorithm='sha256'):

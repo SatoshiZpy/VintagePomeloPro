@@ -76,6 +76,18 @@
       "sha256": "525157a2c5379f3064781c3c3b767c16d1608d7b04b7097cf85190fc6ac9f50c"
     },
     {
+      "name": "rsaenh.dll",
+      "bytes": 1114112,
+      "sha256": "d3849122cb34d1c13c02b91706559999f0455b267b38c3039e7d293203950e68",
+      "sourcePath": "files/lib/wine/aarch64-windows/rsaenh.dll"
+    },
+    {
+      "name": "schannel.dll",
+      "bytes": 655360,
+      "sha256": "be5db0897ef721620cd5006920f6ae87a97abd07a6651b103e65f0efafb58bfb",
+      "sourcePath": "files/lib/wine/aarch64-windows/schannel.dll"
+    },
+    {
       "name": "uiautomationcore.dll",
       "sourcePath": "files/lib/wine/aarch64-windows/uiautomationcore.dll",
       "bytes": 1572864,

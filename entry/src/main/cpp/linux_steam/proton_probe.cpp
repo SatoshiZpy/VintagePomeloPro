@@ -426,6 +426,10 @@ std::string ProbeGnuProton(const std::string& runtime, bool forkBackend, const s
         environment.emplace_back("STEAMOHOS_SYSVIPC_ROOT="+scope);
         steamCompatRoot = external + "/client/.steam/steam/steamohos/compat";
         environment.emplace_back("STEAMOHOS_STEAM_ROOT="+external+"/client/.steam/steam");
+        // Use the same packaged Mozilla roots as the GNU Steam client. The
+        // filesystem adapter maps Wine's distribution CA paths to this bundle;
+        // without it Schannel can handshake but cannot trust the server chain.
+        environment.emplace_back("SSL_CERT_FILE="+external+"/client/.steam/steam/steamohos/ca-certificates.crt");
         environment.emplace_back("STEAMOHOS_LIBRARY_ROOT="+external+"/library");
         environment.emplace_back("STEAM_COMPAT_CLIENT_INSTALL_PATH="+external+"/client/.steam/steam");
         environment.emplace_back("STEAM_COMPAT_LIBRARY_PATHS="+external+"/library");
@@ -557,7 +561,7 @@ std::string ProbeGnuProton(const std::string& runtime, bool forkBackend, const s
                                      "dwmapi.dll", "dwrite.dll", "uiautomationcore.dll", "oleacc.dll",
                                      "msvcp140_2.dll", "vcruntime140_1.dll",
                                      "dxva2.dll", "jsproxy.dll", "mscoree.dll", "normaliz.dll",
-                                     "pdh.dll", "winhttp.dll", "wldap32.dll"})
+                                     "pdh.dll", "winhttp.dll", "wldap32.dll", "schannel.dll", "rsaenh.dll"})
                 if (!LoaderReference(root + "/bootstrap/" + name,
                     root + "/prefix/drive_c/windows/system32/" + name))
                     return failure("proton_bootstrap_module_missing_or_changed", true);
@@ -699,6 +703,32 @@ std::string ProbeGnuProton(const std::string& runtime, bool forkBackend, const s
         // their main operation only edits registry data. Disabling both display
         // drivers here leaves that bootstrap without a usable driver.
         const auto& provisioningEnvironment = prefixEnvironment;
+        // The selectively delivered prefix may predate RSA CSP installation.
+        // Register the pinned module through its own entry point; copying the
+        // DLL alone does not create Cryptography\\Defaults provider entries.
+        if (gameRequested || x64Graphics) {
+            struct stat provider{};
+            if (stat((root + "/bootstrap/rsaenh.dll").c_str(), &provider))
+                return failure("proton_tls_provider_missing", true);
+            const std::string providerState = "rsa-provider-v1\n" +
+                std::to_string(provider.st_size) + ":" + std::to_string(provider.st_mtime) + "\n";
+            NativeExecResult registration;
+            const auto registered = EnsureProtonSetup(root + "/prefix/hmosdeck-tls-provider.state",
+                root + "/prefix/system.reg", providerState, [&]() {
+                    registration = RunNativeLoader({loader, "--inhibit-cache", "--library-path", libraries,
+                        wine, "C:\\windows\\system32\\regsvr32.exe", "/s", "rsaenh.dll"},
+                        provisioningEnvironment, 120000, options);
+                    return Succeeded(registration);
+                });
+            trace.Mark("tlsProvider", registered == ProtonSetupResult::Reused);
+            if (registered == ProtonSetupResult::Failed)
+                return "{\"schemaVersion\":1,\"status\":\"proton_tls_provider_registration_failed\",\"runtimeBackend\":\"gnu-proton\",\"tlsProviderSetup\":" +
+                    NativeExecJson(registration) + "}";
+            if (registered == ProtonSetupResult::StateWriteFailed)
+                return failure("proton_tls_provider_state_write_failed", true);
+            if (unlink((root + "/desktop-probe.once").c_str()) && errno != ENOENT)
+                return failure("proton_tls_desktop_slot_reset_failed", true);
+        }
         if (gameRequested) {
             // Run once per private prefix/configuration, before any game or
             // prerequisite helper. Use Windows registry APIs, never edit live

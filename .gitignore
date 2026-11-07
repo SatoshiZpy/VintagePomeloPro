@@ -25,6 +25,8 @@
 !entry/src/main/resources/rawfile/linux-proton/bootstrap/pdh.dll
 !entry/src/main/resources/rawfile/linux-proton/bootstrap/winhttp.dll
 !entry/src/main/resources/rawfile/linux-proton/bootstrap/wldap32.dll
+!entry/src/main/resources/rawfile/linux-proton/bootstrap/schannel.dll
+!entry/src/main/resources/rawfile/linux-proton/bootstrap/rsaenh.dll
 .deps/
 .libs/
 
