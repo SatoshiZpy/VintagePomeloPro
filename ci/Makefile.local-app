@@ -1,0 +1,6 @@
+# Run by scripts/local_hap.py inside the pinned Linux buildenv and persistent volume.
+.PHONY: hap-local-app
+hap-local-app:
+	python3 scripts/local_hap.py _prepare
+	/apps/harmony/bin/hvigorw --mode module -p product=default -p buildMode=release assembleHap --no-daemon
+	python3 scripts/local_hap.py _verify

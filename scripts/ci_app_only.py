@@ -24,7 +24,8 @@ HAP = Path('entry/build/default/outputs/default/entry-default-unsigned.hap')
 WORKFLOW = '.github/workflows/build.yml'
 # Only orchestration for this fast path is excluded. Native build scripts,
 # manifests, locks, C++ types, resources, package locks and gitlinks are inputs.
-FAST_FILES = {WORKFLOW, 'scripts/ci_app_only.py', 'ci/Makefile.app-only'}
+FAST_FILES = {WORKFLOW, 'scripts/ci_app_only.py', 'ci/Makefile.app-only',
+              'scripts/local_hap.py', 'ci/Makefile.local-app'}
 RECIPE_STEPS = ('Provision unsigned build-profile.json5',
                 'Ensure CI build dependencies present',
                 'Install ArkTS project dependencies', 'Build HAP')

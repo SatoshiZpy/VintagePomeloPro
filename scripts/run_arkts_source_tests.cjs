@@ -26,7 +26,7 @@ host.resolveModuleNames = (names, from) => names.map(name => {
   if (name.startsWith('@kit.')) candidates = [path.join(kits,name+'.d.ts')];
   else if (name.startsWith('@ohos.') || name.startsWith('@system.') || name.startsWith('@arkts.'))
     candidates = [path.join(api,name+'.d.ts'),path.join(api,name+'.d.ets')];
-  else if (native[name]) candidates = [path.join(root,'entry/src/main/cpp/types',native[name],'index.d.ts')];
+  else if (native[name]) candidates = [path.join(root,'entry/src/main/cpp/types',native[name],'Index.d.ts')];
   else if (name.startsWith('.')) candidates = ['.ets','.ts','.d.ts','/index.ets','/index.ts'].map(ext => path.resolve(path.dirname(from),name)+ext);
   const found = candidates.find(p => fs.existsSync(p));
   if (found) return {resolvedFileName:found,isExternalLibraryImport:!!native[name],extension:found.endsWith('.ets')?ts.Extension.Ets:(found.endsWith('.d.ts')?ts.Extension.Dts:ts.Extension.Ts)};
