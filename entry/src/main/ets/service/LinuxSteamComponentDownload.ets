@@ -2,20 +2,19 @@ import { http } from '@kit.NetworkKit';
 import { fileIo as fs } from '@kit.CoreFileKit';
 import { LinuxSteamDownloadArchive } from '../model/LinuxSteamDownloadModels';
 import { ConfigurationFiles } from './ConfigurationFiles';
+import { LinuxSteamDownloadError, LinuxSteamParallelDownload } from './LinuxSteamParallelDownload';
+export { LinuxSteamDownloadError } from './LinuxSteamParallelDownload';
 
-export class LinuxSteamDownloadError extends Error {
-  code: string;
-  constructor(code: string, message: string) { super(message); this.code = code; }
-}
 export type LinuxSteamByteProgress = (received: number) => void;
 
-// One stream at a time. Range data is appended only after validating its range;
-// a server that ignores Range restarts just that archive, never appends a 200.
+// Large Valve archives prefer bounded parallel ranges; the serial transport is
+// the compatibility fallback. Only validated contiguous data reaches .part.
 export class LinuxSteamComponentDownload {
   private request: http.HttpRequest | null = null;
   private stopped: boolean = false;
   private cancelWait: (() => void) | null = null;
-  pause(): void { this.stopped = true; this.request?.destroy(); this.cancelWait?.(); }
+  private parallel: LinuxSteamParallelDownload | null = null;
+  pause(): void { this.stopped = true; this.parallel?.pause(); this.request?.destroy(); this.cancelWait?.(); }
   private check(): void { if (this.stopped) throw new LinuxSteamDownloadError('PAUSED', '下载已暂停，可继续'); }
   async fetch(archive: LinuxSteamDownloadArchive, destination: string, progress: LinuxSteamByteProgress,
     allowNetwork: boolean = true): Promise<void> {
@@ -31,6 +30,20 @@ export class LinuxSteamComponentDownload {
     if (!compatible) {
       if (fs.accessSync(partial)) fs.unlinkSync(partial);
       ConfigurationFiles.json(layout, archive.sha256);
+    }
+    // Large Valve components use bounded parallel ranges. The existing prefix
+    // remains compatible with older versions and with the serial fallback.
+    if (archive.bytes >= 8388608 && /^https:\/\/client-update\.steamstatic\.com\/[A-Za-z0-9_.-]+$/.test(archive.url)) {
+      let offset = fs.accessSync(partial) ? fs.statSync(partial).size : 0;
+      if (offset > archive.bytes) { fs.unlinkSync(partial); offset = 0; }
+      this.parallel = new LinuxSteamParallelDownload();
+      try { await this.parallel.fetch(archive, partial, offset, progress); }
+      catch (error) {
+        this.check();
+        if ((error as LinuxSteamDownloadError).code === 'DISK') throw error as Error;
+        // Range refusal, failed mirrors or a slow network retain the validated
+        // contiguous prefix and fall back to the proven streaming transport.
+      } finally { this.parallel = null; }
     }
     for (let attempt = 0; attempt < 3; attempt++) {
       this.check();
@@ -124,9 +137,15 @@ export class LinuxSteamComponentDownload {
         fs.truncateSync(output.fd, 0); position = 0; reset = true;
       }
       headerReady = true;
-      if (attempt < 2 && slowTimer < 0) slowTimer = setTimeout((): void => {
-        if (position - (reset ? 0 : offset) < 131072 && !ended) fail('SLOW', '当前官方线路较慢，正在尝试另一条官方线路');
-      }, 8000);
+      if (attempt < 2 && slowTimer < 0) {
+        let previous = position;
+        const measure = (): void => {
+          if (ended || failure) return;
+          if (position - previous < 524288) { fail('SLOW', '当前官方线路较慢，正在尝试另一条官方线路'); return; }
+          previous = position; slowTimer = setTimeout(measure, 8000);
+        };
+        slowTimer = setTimeout(measure, 8000);
+      }
     };
     const data = (bytes: ArrayBuffer): void => {
       if (failure || this.stopped) return;
