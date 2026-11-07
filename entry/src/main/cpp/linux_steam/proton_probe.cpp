@@ -561,7 +561,7 @@ std::string ProbeGnuProton(const std::string& runtime, bool forkBackend, const s
                                      "dwmapi.dll", "dwrite.dll", "uiautomationcore.dll", "oleacc.dll",
                                      "msvcp140_2.dll", "vcruntime140_1.dll",
                                      "dxva2.dll", "jsproxy.dll", "mscoree.dll", "normaliz.dll",
-                                     "pdh.dll", "winhttp.dll", "wldap32.dll", "schannel.dll", "rsaenh.dll"})
+                                     "pdh.dll", "winhttp.dll", "wldap32.dll", "schannel.dll", "rsaenh.dll", "credui.dll", "esent.dll", "ncrypt.dll", "usp10.dll", "wtsapi32.dll"})
                 if (!LoaderReference(root + "/bootstrap/" + name,
                     root + "/prefix/drive_c/windows/system32/" + name))
                     return failure("proton_bootstrap_module_missing_or_changed", true);

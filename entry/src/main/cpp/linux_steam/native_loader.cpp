@@ -1,5 +1,6 @@
 #include "native_loader.h"
 #include "native_kernel_maps.h"
+#include "native_exec_ranges.h"
 #include <algorithm>
 #include <cerrno>
 #include <cstring>
@@ -214,7 +215,7 @@ bool NativeLoaderImage::PrepareExecCleanup() {
     if (page != 4096 && page != 16384 && page != 65536) return Fail("exec_cleanup_page", ENOTSUP);
     const size_t codeBytes = static_cast<size_t>(SteamOhosExecCleanupEnd - SteamOhosExecCleanupStart);
     if (!codeBytes || codeBytes > static_cast<size_t>(page)) return Fail("exec_cleanup_code", EOVERFLOW);
-    struct Range { uintptr_t address, bytes; };
+    using Range = NativeExecRange;
     constexpr size_t limit = 16384;
     cleanupBytes_ = static_cast<size_t>(page) + limit * sizeof(Range);
     cleanup_ = mmap(nullptr, cleanupBytes_, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
@@ -229,6 +230,7 @@ bool NativeLoaderImage::PrepareExecCleanup() {
     if (mprotect(cleanup_, static_cast<size_t>(page), PROT_READ | PROT_EXEC))
         return Fail("exec_cleanup_protect", errno);
     auto* ranges = reinterpret_cast<Range*>(static_cast<char*>(cleanup_) + page);
+    NativeExecRanges inventory(ranges, limit);
     const Range keep[] = {{reinterpret_cast<uintptr_t>(image_), imageBytes_},
         {reinterpret_cast<uintptr_t>(stack_), stackBytes_}, {reinterpret_cast<uintptr_t>(cleanup_), cleanupBytes_}};
     FILE* maps = fopen("/proc/self/maps", "re");
@@ -241,12 +243,16 @@ bool NativeLoaderImage::PrepareExecCleanup() {
     const uintptr_t vdso = static_cast<uintptr_t>(getauxval(AT_SYSINFO_EHDR));
     NativeKernelMaps kernelMaps(vdso,static_cast<uintptr_t>(page));
     size_t kernelBytes=0;
-    char line[8192]; uintptr_t previous = 0; size_t total = 0, tlsBytes = 0, hostBytes = 0;
-    bool valid = true;
+    char line[8192]; uintptr_t previous = 0; size_t lines = 0, tlsBytes = 0, hostBytes = 0;
+    const char* invalid = nullptr;
     while (fgets(line, sizeof(line), maps)) {
         unsigned long first = 0, last = 0; int offset = 0; char permissions[5]{};
-        if (!strchr(line, '\n') || sscanf(line, "%lx-%lx %4s %*s %*s %*s %n", &first, &last, permissions, &offset) != 3 ||
-            !offset || first >= last || first < previous || first % page || last % page) { valid = false; break; }
+        ++lines;
+        if (!strchr(line, '\n') || sscanf(line, "%lx-%lx %4s %*s %*s %*s %n", &first, &last, permissions, &offset) != 3 || !offset) {
+            invalid = "parse"; break;
+        }
+        if (first >= last || first < previous) { invalid = "order"; break; }
+        if (first % page || last % page) { invalid = "alignment"; break; }
         previous = last;
         if (first <= bootstrapTp && bootstrapTp < last) { tlsBytes = last - first; continue; }
         const char* name = line + offset;
@@ -268,8 +274,7 @@ bool NativeLoaderImage::PrepareExecCleanup() {
         std::sort(ordered, ordered + 3, [](const Range& a, const Range& b) { return a.address < b.address; });
         auto append = [&](uintptr_t start, uintptr_t end) {
             if (start >= end) return;
-            if (cleanupCount_ == limit) { valid = false; return; }
-            ranges[cleanupCount_++] = {start, end - start}; total += end - start;
+            if (!inventory.Append(start, end)) invalid = "capacity";
         };
         for (const auto& range : ordered) {
             if (range.address >= last || range.address + range.bytes <= cursor) continue;
@@ -277,15 +282,21 @@ bool NativeLoaderImage::PrepareExecCleanup() {
             cursor = std::min<uintptr_t>(last, range.address + range.bytes);
         }
         append(cursor, last);
-        if (!valid) break;
+        if (invalid) break;
     }
-    if (ferror(maps)) valid = false;
+    if (ferror(maps)) invalid = "read";
     fclose(maps);
-    if (!valid || !cleanupCount_) return Fail("exec_cleanup_inventory", EOVERFLOW);
+    cleanupCount_ = inventory.Count();
+    if (invalid || !cleanupCount_) {
+        fprintf(stderr, "STEAMOHOS_EXEC_INVENTORY reason=%s parsed_vmas=%zu ranges=%zu segments=%zu capacity=%zu page=%ld\n",
+            invalid ? invalid : "empty", lines, cleanupCount_, inventory.Segments(), limit, page);
+        return Fail("exec_cleanup_inventory", EOVERFLOW);
+    }
     if (mprotect(ranges, cleanupBytes_ - static_cast<size_t>(page), PROT_READ))
         return Fail("exec_cleanup_ranges", errno);
     diagnostics = "STEAMOHOS_EXEC_RECLAIM mappings=" + std::to_string(cleanupCount_) +
-        " virtual_bytes=" + std::to_string(total) + " bootstrap_tls_bytes=" + std::to_string(tlsBytes) +
+        " parsed_vmas=" + std::to_string(lines) + " segments=" + std::to_string(inventory.Segments()) +
+        " virtual_bytes=" + std::to_string(inventory.Bytes()) + " bootstrap_tls_bytes=" + std::to_string(tlsBytes) +
         " host_anchor_bytes=" + std::to_string(hostBytes) +
         " kernel_anchor_bytes=" + std::to_string(kernelBytes) +
         " loader_base=" + std::to_string(reinterpret_cast<uintptr_t>(image_)) + "\n";

@@ -4,6 +4,12 @@
   "distributionSha512": "4863f86773514ce7cc2c7867d393b725fcd9e32f7948a3b4035ae67a84b3e0ff4b179c479079a0dcf141c159faa19f67e7b82b3ed4c4b0ef9720226d55594661",
   "files": [
     {
+      "name": "credui.dll",
+      "bytes": 720896,
+      "sha256": "eec3afaa5bc1fbdef30652731558d48d8c5391063b8d3cfbbab05c6bfe24f7c2",
+      "sourcePath": "files/lib/wine/aarch64-windows/credui.dll"
+    },
+    {
       "name": "dwmapi.dll",
       "sourcePath": "files/lib/wine/aarch64-windows/dwmapi.dll",
       "bytes": 655360,
@@ -20,6 +26,12 @@
       "bytes": 917504,
       "sha256": "66b41674bcca579fb42638647ff959fc4ae915a2b0599718f8ed03731e94389e",
       "sourcePath": "files/lib/wine/aarch64-windows/dxva2.dll"
+    },
+    {
+      "name": "esent.dll",
+      "bytes": 589824,
+      "sha256": "4699b48fb174d0f512568834fd02bc9cd2a3e5c8b3fa583b3b9af65583eae57c",
+      "sourcePath": "files/lib/wine/aarch64-windows/esent.dll"
     },
     {
       "name": "jsproxy.dll",
@@ -50,6 +62,12 @@
       "sourcePath": "files/lib/wine/aarch64-windows/mswsock.dll",
       "bytes": 655360,
       "sha256": "6d0dc67c2c9ee5a5dc6a9f477a4f7c77a12caab8fb0741ca105f6c3770299d7a"
+    },
+    {
+      "name": "ncrypt.dll",
+      "bytes": 589824,
+      "sha256": "4c0d00d9becb267168ed1593f1115d74e8cb0595b38769a06071ef3b0d72fd3a",
+      "sourcePath": "files/lib/wine/aarch64-windows/ncrypt.dll"
     },
     {
       "name": "normaliz.dll",
@@ -94,6 +112,12 @@
       "sha256": "088850a6e56a56cf6ab08e02a5ad18c83261a40e887ef7cececcc9b2b9c7eb75"
     },
     {
+      "name": "usp10.dll",
+      "bytes": 131072,
+      "sha256": "8107ae67a3bf13a31a55d0c1994ba379f757181deb4d7d5580359bde7b90711b",
+      "sourcePath": "files/lib/wine/aarch64-windows/usp10.dll"
+    },
+    {
       "name": "vcruntime140_1.dll",
       "sourcePath": "files/lib/wine/aarch64-windows/vcruntime140_1.dll",
       "bytes": 655360,
@@ -122,6 +146,12 @@
       "sourcePath": "files/lib/wine/aarch64-windows/wsock32.dll",
       "bytes": 655360,
       "sha256": "b48a17f77a43915c09e0b1ed0cb2f46fc7e85574fc4d5f70b598b06094cdbd1e"
+    },
+    {
+      "name": "wtsapi32.dll",
+      "bytes": 589824,
+      "sha256": "63f9ca2de75fc4e5aadefa439a2fa6e0aa4176c8711276c10c30fdaae15a5515",
+      "sourcePath": "files/lib/wine/aarch64-windows/wtsapi32.dll"
     }
   ]
 }

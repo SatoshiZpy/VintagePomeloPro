@@ -19,13 +19,19 @@ import time
 import zipfile
 import ci_app_only as reuse
 import local_hap as local
+import build_linux_proton_bootstrap as bootstrap
 from verify_ci_release import verify_artifact
 
 ROOT = Path(__file__).resolve().parents[1]
 PROFILE = 'entry/src/main/resources/rawfile/linux-proton/graphics-x64/'
+BOOTSTRAP = 'entry/src/main/resources/rawfile/linux-proton/bootstrap/'
 CHILD = 'libs/arm64-v8a/libsteamohos_gnu_child.so'
 NATIVE = 'ci-artifacts/graphics-native'
 REBUILT_INPUTS = {
+    # Complete OHOS child and GNU adapter receipts cover exec reclamation.
+    'entry/src/main/cpp/linux_steam/native_loader.cpp',
+    'entry/src/main/cpp/linux_steam/native_exec_ranges.h',
+    'host_tests/native_exec_ranges_test.cpp',
     # Host-only HUD regression script; not a native input or packaged payload.
     'scripts/test_performance_hud.cjs',
     '.gitignore', 'entry/src/main/cpp/linux_steam/proton_probe.cpp',
@@ -35,8 +41,11 @@ REBUILT_INPUTS = {
     'entry/src/main/cpp/linux_steam/gnu_fixture/proton_file_mapping.h',
     'entry/src/main/cpp/linux_steam/gnu_fixture/proton_vulkan_addressing.h',
     'entry/src/main/cpp/linux_steam/gnu_fixture/proton_vulkan_bc_features.h',
+    # Opt-in x64 timing, compiled and checked by both fresh native receipts.
+    'entry/src/main/cpp/linux_steam/gnu_fixture/proton_vulkan_profile.h',
     'scripts/build_linux_proton_probe.py', 'scripts/build_linux_proton_x64_graphics.py',
     'scripts/local_proton_graphics_hap.py', 'ci/Makefile.proton-graphics',
+    'scripts/build_linux_proton_bootstrap.py', 'host_tests/proton_bootstrap_closure_test.py',
     'ci/Makefile.proton-demo', 'smoke/proton_x64_d3d11_cube.c', 'smoke/proton_native_memory_proxy.c',
 }
 
@@ -83,15 +92,28 @@ def validate_native():
         raise ValueError('Unrecorded or linked graphics payload')
     return profile, child
 
+def validate_bootstrap():
+    manifest = bootstrap.verify(ROOT)
+    expected = {r['name'] for r in manifest['files']} | {'manifest.json'}
+    actual = {str(p.relative_to(ROOT/BOOTSTRAP)) for p in (ROOT/BOOTSTRAP).rglob('*') if p.is_file()}
+    if actual != expected or any(p.is_symlink() for p in (ROOT/BOOTSTRAP).rglob('*')):
+        raise ValueError('Unrecorded or linked bootstrap payload')
+    return manifest
+
 def prepare():
     receipt = data(ROOT/'ci-artifacts/graphics-input.json')
     base = Path(receipt['baseHap'])
     if reuse.sha(base) != receipt['baseHapSha256']:
         raise ValueError('Base HAP changed')
+    validate_bootstrap()
+    supplement = {p.name: p.read_bytes() for p in (ROOT/BOOTSTRAP).iterdir() if p.is_file()}
     staging = ROOT/'ci-artifacts/base-payload'
     reuse.extract(base, staging, reuse.immutable)
     shutil.copytree(staging/'libs', ROOT/'entry/libs', dirs_exist_ok=True)
     shutil.copytree(staging/'resources/rawfile', ROOT/'entry/src/main/resources/rawfile', dirs_exist_ok=True)
+    for name, contents in supplement.items():
+        (ROOT/BOOTSTRAP/name).write_bytes(contents)
+    validate_bootstrap()
     profile, child = validate_native()
     # Validate compiler/link inputs against the exact GNU runtime in this base.
     with zipfile.ZipFile(base) as hap:
@@ -131,11 +153,14 @@ def finish():
     base, candidate = Path(receipt['baseHap']), ROOT/reuse.HAP
     expected_new = {'resources/rawfile/linux-proton/graphics-x64/'+str(p.relative_to(ROOT/PROFILE)):
                     reuse.sha(p) for p in (ROOT/PROFILE).rglob('*') if p.is_file()}
+    bootstrap_manifest = validate_bootstrap()
+    replacements = {'resources/rawfile/linux-proton/bootstrap/'+p.name: reuse.sha(p)
+                    for p in (ROOT/BOOTSTRAP).iterdir() if p.is_file()}
     tmp = candidate.with_suffix('.preserved.hap')
     with zipfile.ZipFile(base) as trusted, zipfile.ZipFile(candidate) as built:
         expected = {n for n in trusted.namelist() if reuse.immutable(n)}
         actual = {n for n in built.namelist() if reuse.immutable(n)}
-        if expected & expected_new.keys() or actual != expected | expected_new.keys():
+        if expected & expected_new.keys() or actual != expected | expected_new.keys() | replacements.keys():
             raise ValueError('Unexpected native/raw member addition or removal')
         if len(built.namelist()) != len(set(built.namelist())):
             raise ValueError('Duplicate HAP member')
@@ -150,13 +175,15 @@ def finish():
                         shutil.copyfileobj(inp, dst, 1048576)
     tmp.replace(candidate)
     with zipfile.ZipFile(base) as trusted, zipfile.ZipFile(candidate) as built:
-        for name in expected | expected_new.keys():
+        for name in expected | expected_new.keys() | replacements.keys():
             with built.open(name) as inp:
                 digest = hashlib.file_digest(inp, 'sha256').hexdigest()
             if name == CHILD:
                 target = child['outputSha256']
             elif name in expected_new:
                 target = expected_new[name]
+            elif name in replacements:
+                target = replacements[name]
             else:
                 with trusted.open(name) as inp:
                     target = hashlib.file_digest(inp, 'sha256').hexdigest()
@@ -166,11 +193,13 @@ def finish():
     checked.update(receipt)
     checked.update(buildKind='focused-native-gnu-x64-graphics', signed=False,
                    rebuiltChild=child, graphicsProfile=profile,
-                   unchangedRuntimeMembers=len(expected)-1, addedProfileMembers=len(expected_new))
+                   unchangedRuntimeMembers=len(expected - replacements.keys())-1,
+                   addedProfileMembers=len(expected_new), bootstrapSupplement=bootstrap_manifest)
     save(ROOT/'graphics-build-report.json', checked)
     print('PASS: API 23 ARM64 candidate; one rebuilt native target and verified graphics supplement')
 
 def build():
+    validate_bootstrap()
     config = data(local.CACHE/'config.json')
     base_commit = config['baseCommit']
     if reuse.native_recipe(ROOT, base_commit) != reuse.native_recipe(ROOT, 'HEAD'):
@@ -178,7 +207,7 @@ def build():
     changed = local.command('git', 'diff', '--no-renames', '--name-only', base_commit, cwd=ROOT).splitlines()
     untracked = local.command('git', 'ls-files', '--others', '--exclude-standard', cwd=ROOT).splitlines()
     for name in changed + untracked:
-        if not (reuse.app_input(name) or name in REBUILT_INPUTS or name.startswith(PROFILE)):
+        if not (reuse.app_input(name) or name in REBUILT_INPUTS or name.startswith((PROFILE, BOOTSTRAP))):
             raise ValueError('Outside this focused rebuild scope: ' + name)
     for status in subprocess.check_output(['git','submodule','status'], cwd=ROOT, text=True).splitlines():
         if status.startswith(('+','U')):
@@ -192,12 +221,13 @@ def build():
     archive = output/'source.tar'
     names = local.command('git','ls-files','--cached','--others','--exclude-standard',cwd=ROOT).splitlines()
     names = [name for name in set(names) if local.build_input(name) or name.startswith('entry/src/main/cpp/') or
-             name.startswith('scripts/') or name == 'ci/Makefile.proton-graphics']
+             name.startswith('scripts/') or name in {'ci/Makefile.proton-graphics',
+                 'docs/linux-steam/gnu-proton-probe.lock.json', 'docs/linux-steam/proton-media.lock.json'}]
     digest = hashlib.sha256()
     with tarfile.open(archive, 'w') as tar:
         for name in sorted(names):
             p = ROOT/name
-            if not p.is_file() or (name.startswith('entry/src/main/resources/rawfile/') and not name.startswith(PROFILE)):
+            if not p.is_file() or (name.startswith('entry/src/main/resources/rawfile/') and not name.startswith((PROFILE, BOOTSTRAP))):
                 continue
             if p.is_symlink():
                 raise ValueError('Source symlink: ' + name)
