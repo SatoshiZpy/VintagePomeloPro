@@ -22,6 +22,12 @@
       "sha256": "62e6e97fe086046159add26414c15162d38d42c68c41f2591b8c0408e177b4fb"
     },
     {
+      "name": "msvcp140_2.dll",
+      "sourcePath": "files/lib/wine/aarch64-windows/msvcp140_2.dll",
+      "bytes": 655360,
+      "sha256": "1b4dfe42b5bc0021d69dcc102b060678f5bca850df262a50888d64683396c233"
+    },
+    {
       "name": "mswsock.dll",
       "sourcePath": "files/lib/wine/aarch64-windows/mswsock.dll",
       "bytes": 655360,
@@ -44,6 +50,12 @@
       "sourcePath": "files/lib/wine/aarch64-windows/uiautomationcore.dll",
       "bytes": 1572864,
       "sha256": "088850a6e56a56cf6ab08e02a5ad18c83261a40e887ef7cececcc9b2b9c7eb75"
+    },
+    {
+      "name": "vcruntime140_1.dll",
+      "sourcePath": "files/lib/wine/aarch64-windows/vcruntime140_1.dll",
+      "bytes": 655360,
+      "sha256": "c9c3a351c32e196823e8d7c130a64107ff421ef2122cd9e3650b49996cd5ce03"
     },
     {
       "name": "wevtsvc.dll",

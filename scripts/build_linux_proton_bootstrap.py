@@ -12,7 +12,8 @@ from pathlib import Path, PurePosixPath
 
 ROOT = Path(__file__).resolve().parents[1]
 NAMES = ('dwmapi.dll', 'dwrite.dll', 'lsass.exe', 'mswsock.dll', 'oleacc.dll',
-         'psapi.dll', 'uiautomationcore.dll', 'wevtsvc.dll', 'wsock32.dll')
+         'psapi.dll', 'uiautomationcore.dll', 'wevtsvc.dll', 'wsock32.dll',
+         'msvcp140_2.dll', 'vcruntime140_1.dll')
 
 
 def sha(path, algorithm='sha256'):
