@@ -1,7 +1,7 @@
 {
   "layered-image":
   {
-    "background" : "$media:background",
+    "background" : "$media:hmdeck_background",
     "foreground" : "$media:foreground"
   }
 }
