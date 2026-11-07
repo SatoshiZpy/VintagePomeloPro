@@ -45,7 +45,8 @@ def sha(path):
 
 def app_input(name):
     p = PurePosixPath(name)
-    return (name in FAST_FILES or
+    return (name in FAST_FILES or name == 'AGENTS.md' or
+            (name.startswith('.agents/skills/') and p.suffix == '.md') or
             (name.startswith('entry/src/main/ets/') and p.suffix == '.ets') or
             (name.startswith('docs/') and p.suffix == '.md') or
             name.startswith('host_tests/') or

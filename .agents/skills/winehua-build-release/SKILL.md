@@ -1,15 +1,59 @@
 ---
 name: winehua-build-release
-description: Build, test, sign, inspect, install, diagnose, and privately publish the WineHua/Old Pomelo Pro HarmonyOS project. Use for Docker/Makefile builds, API 23 HAP or APP packaging, x86_64 emulator and ARM64 tablet variants, Box64/Wine/Wayland/VirGL/guest-gfx changes, signing-profile work, HDC deployment, ARM-only Wine startup failures, submodule updates, isolated private-branch work, or publishing VintagePomeloPro without pushing private code to WineHua origin. Also use after a WSL or Docker Desktop reinstall (or on a fresh machine) to rebuild the compile environment (Docker WSL integration, git credentials and proxy, private repo/submodule restore, Wine Mono staging, and signing-config recovery).
+description: Build, test, sign, inspect, install, diagnose, and privately publish the WineHua/Old Pomelo Pro HarmonyOS project. Use for local quick checks, persistent Docker app-only builds, full native builds, API 23 HAP or APP packaging, x86_64 emulator and ARM64 tablet variants, Box64/Wine/Wayland/VirGL/guest-gfx changes, signing-profile work, HDC deployment, ARM-only Wine startup failures, submodule updates, isolated private-branch work, or publishing VintagePomeloPro without pushing private code to WineHua origin. Also use after a WSL or Docker Desktop reinstall (or on a fresh machine) to rebuild the compile environment (Docker WSL integration, git credentials and proxy, private repo/submodule restore, Wine Mono staging, and signing-config recovery).
 ---
 
 # WineHua Build, Test, And Release
 
 Treat this file as the portable source of truth for the WineHua private product build. Derive machine paths and the current version from the checkout; do not copy paths, versions, device IDs, credentials, or artifact hashes from an older machine.
 
+## Default Development Route: Local Checks And App-Only HAP
+
+For ordinary ArkTS/application changes, prefer the configured local route over a CI
+run or a full Wine rebuild. Find the worktree with `scripts/local_hap.py` and
+`.hvigor/local-build/config.json` using `git worktree list`; the main checkout may
+not contain the local cache. Keep the main checkout on `main_proton_steamarm64`
+and edit code in a dedicated worktree.
+
+From that worktree:
+
+```bash
+node scripts/run_local_tests.cjs              # fast checks, no HAP/device/CI
+python3 scripts/local_hap.py doctor           # inspect the configured Linux environment
+python3 scripts/local_hap.py build            # actual local app-only HAP compilation
+```
+
+The build driver invokes `ci/Makefile.local-app` inside a pinned Linux Docker
+image with persistent Linux source/dependency/Hvigor caches. It includes eligible
+uncommitted ArkTS changes. The initial CI image includes its own Linux SDK; do not
+mount the macOS SDK as a substitute. The validated configuration uses an API 24
+toolchain with both minimum and target API 23; check artifact metadata rather than
+assuming the installed toolchain API is the package target.
+
+Output is `.hvigor/outputs/local-hap/<run>/entry-default-unsigned.hap` plus
+`report.json`. Inspect the report's source snapshot, runtime commit, API/ABI,
+SHA-256 and immutable-payload verification. This is an unsigned candidate: use the
+existing development signing flow if an installable package is requested, and
+report device acceptance separately. If the user owns interactive verification,
+leave device operation to them.
+
+Runtime reuse is conditional on the driver's checks. Native code, gitlinks,
+runtime resources, SDK/ABI/product inputs or an incompatible baseline require a
+corresponding full build and a new verified base. Do not loosen the guard, change
+receipts, or describe the reused runtime as newly compiled. Use the full-build
+sections below when reuse is rejected or native work is requested; they are not
+mandatory steps for every app-only change.
+
+For cache locations, first-time image/base import and measured timings, read
+[Local Docker builds](../../../docs/linux-steam/LOCAL_DOCKER_BUILD.zh-CN.md).
+For host-only check scope, read
+[Local validation](../../../docs/linux-steam/LOCAL_VALIDATION.zh-CN.md).
+Reuse existing configuration and volumes. Missing `winehua-dev` alone does not
+mean this configured CI-image route is unavailable.
+
 ## Non-Negotiable Policy
 
-1. Build only through the repository `Makefile` inside the existing Linux Docker image `winehua-dev`.
+1. Build HAP/native payloads through repository Makefile targets inside Linux Docker. Use `scripts/local_hap.py` / `ci/Makefile.local-app` for eligible app-only builds; use the root `Makefile` and the configured native build environment for full builds. Host-only diagnostic tests do not require Docker.
 2. On Windows, use WSL only to invoke Docker. Do not compile Wine, Box64, Mesa, VirGL, native libraries, or HAPs directly in WSL.
 3. Keep source and build output on a Linux filesystem. Do not perform heavy builds from `/mnt/c`, `/mnt/d`, `/mnt/f`, or another Windows-mounted tree.
 4. Use API 23 as the current minimum and default: `TARGET_SDK_VERSION=6.1.0(23)` and `COMPATIBLE_SDK_VERSION=6.1.0(23)`. Never silently lower either value. Raise them only after verifying the SDK and target device.
@@ -177,14 +221,18 @@ Use the smallest target that proves a local change, then finish with `hap` for a
 
 | Changed area | Minimum focused target | Required candidate target |
 | --- | --- | --- |
-| ArkTS, resources, catalog, settings | catalog unit test plus HAP compile | `hap` |
+| ArkTS, catalog, settings (eligible inputs) | `node scripts/run_local_tests.cjs`, then local HAP compile | `python3 scripts/local_hap.py build`; sign when installation is requested |
+| Resources or other inputs rejected by reuse checks | focused checks plus full HAP compile | `hap` |
 | NAPI, compositor, broker, audio, input native code | `native`, then `assemble` | `hap` for each affected ABI |
 | Wine submodule or Wine build script | `wine`, then `assemble` | `hap` for each affected ABI |
 | Box64 | `box64`, then ARM `assemble` | ARM64 `hap` |
 | Mesa, libdrm, VirGL, guest-gfx scripts | `deps`, `native`, `assemble` | ARM64 and x86_64 `hap` when shared behavior changes |
 | Signing, product, SDK, ABI filters | `assemble` if payload changed | Debug HAP and/or formal APP as requested |
 
-## Canonical Docker Build
+## Full Native Docker Build
+
+Use this section for full/native builds; eligible app-only changes use the local
+route above and do not need a separate host-mounted Linux SDK.
 
 Prefer the repository's persistent-container helper so every build reuses one
 container instead of creating a new writable layer per `docker run`:
@@ -462,7 +510,7 @@ After every build, compare `git status` with the pre-build snapshot. Packaging m
 
 ## Commit And Private Publish
 
-Commit only after focused tests, Docker HAP build, artifact inspection, and the relevant emulator/ARM regression pass. Split commits by coherent milestones. Do not include unrelated worktree changes or dirty submodule state.
+For product changes, validate the affected scope with focused tests, the applicable Docker HAP build and artifact checks; perform device regression when it is part of the authorized task. Documentation/agent-instruction changes need no HAP rebuild. Check-only and unsigned-build requests do not require installation; preserve any user-owned device verification handoff. Split commits by coherent milestones. Do not include unrelated worktree changes or dirty submodule state.
 
 Before first or subsequent private publication:
 
@@ -505,4 +553,4 @@ Report only verified facts:
 - whether code was committed or pushed, and the exact private destination if pushed;
 - any untested hardware path, unavailable external peripheral, or remaining risk.
 
-Never call a build complete merely because compilation succeeded. Completion requires a signed installable artifact, archive integrity checks, and the device-level validation appropriate to the changed area.
+Distinguish quick checks, verified unsigned HAP compilation, signed installable packaging, and device acceptance. Report only the requested stage actually completed; an unsigned local build does not establish signing or device success.

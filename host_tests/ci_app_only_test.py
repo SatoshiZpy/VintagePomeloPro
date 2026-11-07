@@ -78,6 +78,14 @@ class ReuseTests(unittest.TestCase):
                 self.assertFalse(reuse.eligible(self.root, self.base, commit(self.root)))
                 git(self.root, 'reset', '--hard', self.base)
 
+    def test_agent_docs_preserve_reuse_but_skill_scripts_do_not(self):
+        for name in ['AGENTS.md', '.agents/skills/winehua-build-release/SKILL.md',
+                     '.agents/skills/winehua-build-release/references/local.md']:
+            write(self.root, name, 'Local build guidance')
+            self.assertTrue(reuse.eligible(self.root, self.base, commit(self.root)))
+        write(self.root, '.agents/skills/winehua-build-release/scripts/build.py', 'print(1)')
+        self.assertFalse(reuse.eligible(self.root, self.base, commit(self.root)))
+
     def test_gitlinks_invalidate_reuse(self):
         git(self.root, 'update-index', '--add', '--cacheinfo', '160000,' + self.base + ',thirdparty/wine-valve')
         git(self.root, 'commit', '-qm', 'gitlink')
