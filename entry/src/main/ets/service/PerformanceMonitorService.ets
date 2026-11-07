@@ -72,7 +72,7 @@ export class PerformanceMonitorService {
     let fps = false;
     let telemetry = false;
     this.subscribers.forEach((metrics: PerformanceHudSettings): void => {
-      fps = fps || metrics.fps;
+      fps = fps || metrics.fps || metrics.resolution;
       telemetry = telemetry || hasPerformanceTelemetry(metrics);
     });
     if (telemetry) void this.sample();
