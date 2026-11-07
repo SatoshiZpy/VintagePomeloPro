@@ -721,9 +721,8 @@ export class WineEngineService {
     const settings = AppSettingsStore.getInstance().getGlobalSettings();
     const home = this.homeDirectory.length > 0 ? this.homeDirectory :
       '/storage/Users/currentUser/Download/com.vintage.pomelopro';
-    WineWindowManager.getInstance().applyModePolicy();
     return this.ensureReady(settings.defaultDisplayMode,
-      WineWindowManager.getInstance().presentationMode, home);
+      WineWindowManager.getInstance().resolvePresentationMode(), home);
   }
 
   getState(): EngineState {
@@ -832,6 +831,9 @@ export class WineEngineService {
       this.finishWaiters(false);
       return false;
     }
+    // Normalize device constraints before matching or reusing a session. Do
+    // not apply the native mode until the previous coordinator has drained.
+    presentationMode = WineWindowManager.getInstance().resolvePresentationMode(presentationMode);
     const requestedPrefixMode = prefixMode === 'clean' ? 'clean' : 'reuse';
     const requestedWineLanguage = AppSettingsStore.getInstance().getGlobalSettings().wineLanguage;
     const requestedD3DBackend = this.selectedD3DBackend();
@@ -891,7 +893,7 @@ export class WineEngineService {
     // Subscribe before any asynchronous prerequisite or native launch. Return
     // this bounded result even if an SDK promise never settles.
     const ready = this.waitForReady();
-    this.prepareSession(generation, homeDirectory, foregroundCurrent).catch(() => {
+    this.prepareSession(generation, presentationMode, homeDirectory, foregroundCurrent).catch(() => {
       this.failStartup(generation, 'Wine 引擎准备失败，请重试');
     });
     return ready;
@@ -901,7 +903,7 @@ export class WineEngineService {
     return generation === this.startupGeneration && this.state === EngineState.PREPARING;
   }
 
-  private async prepareSession(generation: number, homeDirectory: string,
+  private async prepareSession(generation: number, presentationMode: WinePresentationMode, homeDirectory: string,
     foregroundCurrent?: () => boolean): Promise<void> {
     try {
       const settings = AppSettingsStore.getInstance().getGlobalSettings();
@@ -910,11 +912,11 @@ export class WineEngineService {
       if (!this.startupCurrent(generation)) return;
       this.prefixRefreshRequired = prefixRefreshRequired;
       this.pendingPrefixVersion = prefixRefreshRequired ? bundledRuntimeVersion : new Uint8Array(0);
-      // 桌面模式按最新设置统一判定 (phone 恒虚拟; tablet 默虚拟可切多窗口; PC 按设置)。
-      // 切换后重启引擎即生效 — applyModePolicy 内部已同步 native setDesktopMode。
-      WineWindowManager.getInstance().applyModePolicy();
+      // Honor the session request already used for matching and stop/drain.
+      // Re-reading the PC fusion default here would silently discard Steam's
+      // required desktop host while reporting the engine as ready.
+      WineWindowManager.getInstance().applyModePolicy(presentationMode);
       WineWindowManager.getInstance().setStartupForegroundGuard(foregroundCurrent ?? null);
-      this.presentationMode = WineWindowManager.getInstance().presentationMode;
       if (this.presentationMode !== WinePresentationMode.MANAGED_WINDOWS) {
         const orientation = settings.desktopOrientation ?? ScreenOrientationSetting.SENSOR_LANDSCAPE;
         // This must happen before startServer/launchClient. A later ArkUI

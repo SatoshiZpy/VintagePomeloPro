@@ -36,10 +36,30 @@ prefix 的完成标记仍为 `wineboot-init-request`，缺少 WOW6432Node Shell 
 为本次测试更改持久桌面模式。设备有界日志与截图保存在本地忽略目录
 `.hvigor/outputs/mono-startup-20261107/`，不上传共享日志或注册表。
 
-完整新 HAP 尚未验证：本机没有 `winehua-dev` 镜像，推送触发的 CI 构建仍进行中。
-CI clean-checkout preflight 已通过。额外的 source-build contract 测试在 macOS
+Mono 修复的 ARM64 unsigned HAP 已通过 CI 构建（run `42360978164`），
+包括 clean-checkout preflight；尚未覆盖安装该新包。本机没有 `winehua-dev` 镜像。额外的 source-build contract 测试在 macOS
 下使用 Mach-O fixture，不满足其 Linux ELF 假设；未修改的基线也同样失败，
 不能作为本次本地构建通过证据。
+
+## 2026-11-07：Steam 的虚拟桌面请求被融合默认值覆盖
+
+`LinuxSteamSessionService` 已通过 `ensureReady(DESKTOP, DESKTOP, ...)` 请求
+虚拟桌面，但 `WineEngineService.prepareSession()` 再次无参数调用
+`applyModePolicy()`，用 2in1/PC 保存的融合模式覆盖请求。引擎报告 READY 后，
+`LinuxSteamWindowHost.start()` 检测到实际仍为融合模式，抛出窗口模式错误。
+
+修复将模式解析与应用分开：先按设备约束解析会话要求，再参与会话匹配、复用及
+停止切换；旧协调器退出后、原生服务启动前应用同一个模式。Steam 明确请求的
+虚拟桌面优先于默认设置，手机仍强制虚拟桌面。没有会话要求的普通启动继续遵从
+Want 覆盖及保存的设置；不改写两者。原生 `setDesktopMode`、窗口管理器及 ArkUI
+模式镜像同步更新，Steam 的窗口模式门禁保留。
+
+回归执行完整生产 `WineEngineService` 与 `WineWindowManager`，旧实现能复现失败，
+修复后 20 项启动测试通过。新增覆盖融合默认值/Want 覆盖下启动 Steam、先停止
+融合会话再切桌面及复用、恢复默认模式前不能修改运行中原生模式、手机约束和默认
+模式选择。现有 Edge 窗口、Steam 窗口宿主、Deck 启动反馈测试全部通过；启动测试
+加入 CI 的 ArkTS 服务检查。设备旧包的临时模式验证与新包覆盖验证分别记录，不
+把旧包 Want 覆盖当作新代码实机通过。
 
 2026-10-21，分支 `main_proton_steamarm64`，基线 `e5c43c4a`。本记录与首初始化修复、已有 Deck 和 Linux Steam 稳定性改动一并保存到源码提交。
 

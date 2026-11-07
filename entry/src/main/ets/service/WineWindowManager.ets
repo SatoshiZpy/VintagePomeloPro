@@ -95,28 +95,29 @@ export class WineWindowManager {
   private mainWindowStage: window.WindowStage | null = null;
 
   /**
-   * 桌面模式统一判定:
-   * - phone 恒走虚拟桌面 (isDesktopMode=true), 无设置项
-   * - tablet 默认虚拟桌面, 设置可切多窗口 (Fusion subWindow, 不 startAbility)
-   * - PC/2in1 按 DesktopModeService (MODE_FUSION=独立 Ability / MODE_VIRTUAL=虚拟桌面)
-   * 显式 want 覆盖 (winehua.desktopMode) 优先于持久化值, 不落盘。
-   * 调用点: app 启动 (init) + 引擎每次启动前 (WineEngineService)。
+   * Resolve without touching a running native session. Explicit session needs
+   * (such as Linux Steam's desktop host) take precedence over defaults; phones
+   * still require a virtual desktop. Want overrides precede saved preferences
+   * when the caller has no session-specific requirement. Nothing is persisted.
    */
-  applyModePolicy(): void {
-    const wasDesktop = this.isDesktopMode;
-    const isPhone = DeviceCapabilityPolicy.isPhoneDevice();
+  resolvePresentationMode(requestedMode?: WinePresentationMode): WinePresentationMode {
+    if (DeviceCapabilityPolicy.isPhoneDevice()) return WinePresentationMode.DESKTOP;
+    if (requestedMode !== undefined) return requestedMode;
     const explicitMode = DesktopModeService.getInstance().getOverrideMode();
     const savedMode = DesktopModeService.getInstance().mode;
     const effectiveMode = (explicitMode === MODE_FUSION || explicitMode === MODE_VIRTUAL) ?
       explicitMode : savedMode;
-    if (isPhone) {
-      this.isDesktopMode = true;
-      this.presentationMode = WinePresentationMode.DESKTOP;
-    } else {
-      this.isDesktopMode = (effectiveMode === MODE_VIRTUAL);
-      this.presentationMode = this.isDesktopMode ?
-        WinePresentationMode.DESKTOP : WinePresentationMode.MANAGED_WINDOWS;
-    }
+    return effectiveMode === MODE_VIRTUAL ?
+      WinePresentationMode.DESKTOP : WinePresentationMode.MANAGED_WINDOWS;
+  }
+
+  // Apply at app initialization or after the old engine has drained, before
+  // native startup. Keep the native compositor and ArkUI mirrors in sync.
+  applyModePolicy(requestedMode?: WinePresentationMode): void {
+    const wasDesktop = this.isDesktopMode;
+    const explicitMode = DesktopModeService.getInstance().getOverrideMode();
+    this.presentationMode = this.resolvePresentationMode(requestedMode);
+    this.isDesktopMode = this.presentationMode === WinePresentationMode.DESKTOP;
     if (wasDesktop !== this.isDesktopMode) this.desktopRootId = 0;
     testNapi.setDesktopMode(this.isDesktopMode);
     hilog.info(DOMAIN, TAG,

@@ -7,23 +7,27 @@ const path = require('node:path');
 const ts = require(process.argv[2]);
 const text = fs.readFileSync(path.join(__dirname, '../entry/src/main/ets/service/WineEngineService.ets'), 'utf8');
 const compiled = ts.transpileModule(text, {compilerOptions:{target:ts.ScriptTarget.ES2020, module:ts.ModuleKind.CommonJS}}).outputText;
+const wmCompiled = ts.transpileModule(fs.readFileSync(path.join(__dirname, '../entry/src/main/ets/service/WineWindowManager.ets'), 'utf8'), {compilerOptions:{target:ts.ScriptTarget.ES2020,module:ts.ModuleKind.CommonJS}}).outputText;
 const modelExports = {};
 vm.runInNewContext(ts.transpileModule(fs.readFileSync(path.join(__dirname, '../entry/src/main/ets/model/AppModels.ets'), 'utf8'), {compilerOptions:{target:ts.ScriptTarget.ES2020,module:ts.ModuleKind.CommonJS}}).outputText, {exports:modelExports,require:()=>({})});
 const State = {STOPPED:'stopped', PREPARING:'preparing', SWITCHING:'switching', READY:'ready', ERROR:'error'};
-function fixture() {
+function fixture(savedMode='virtual', deviceType='2in1', overrideMode='') {
   let now=1000, next=0, launches=0, stops=0;
   const timers=new Map();
   let snapshot={generation:0,active:false,state:'idle',phase:''};
   const settings={wineLanguage:'zh_CN',defaultDisplayMode:'desktop',wineTranslationEngine:'fex',box64Preset:'default'};
-  const wm={presentationMode:'desktop',applyModePolicy(){},setStartupForegroundGuard(){},prepareOutputForOrientation(){}};
+  const desktopSettings={mode:savedMode,getOverrideMode:()=>overrideMode};
+  const storage=new Map(), modes=[];
+  let wm, nativeDesktop;
   const napi={
     getWineStartupState:()=>JSON.stringify(snapshot),getProcessList:()=>[],
+    setDesktopMode:value=>{nativeDesktop=value;modes.push(value);},
     setHostGraphicsBackend:()=>true,startServer:()=>true,
     launchClient(){++launches;snapshot={generation:snapshot.generation+1,active:true,state:'starting',phase:'wineboot'};return 0;},
     stopAll(){++stops;snapshot.active=false;snapshot.state='cancelled';}
   };
   function schedule(fn,ms,repeat) {const id=++next;timers.set(id,{fn,ms,repeat,at:now+ms});return id;}
-  const context={exports:{},Date:{now:()=>now},Uint8Array,ArrayBuffer,JSON,Math,Set,Map,Promise,
+  const context={exports:{},AppStorage:{get:key=>storage.get(key),setOrCreate:(key,value)=>storage.set(key,value)},Date:{now:()=>now},Uint8Array,ArrayBuffer,JSON,Math,Set,Map,Promise,
     setTimeout:(f,t)=>schedule(f,t,false),setInterval:(f,t)=>schedule(f,t,true),
     clearTimeout:id=>timers.delete(id),clearInterval:id=>timers.delete(id),
     require(name) {
@@ -31,14 +35,21 @@ function fixture() {
       if(name==='@kit.CoreFileKit')return {fileIo:{accessSync:()=>false}};
       if(name.includes('LogService'))return {hilog:{info(){},warn(){},error(){}}};
       if(name.includes('AppModels'))return {...modelExports,EngineState:State,WineLanguage:{CHINESE:'zh_CN'},
-        WinePresentationMode:{DESKTOP:'desktop',MANAGED_WINDOWS:'managed'},
+        WinePresentationMode:{DESKTOP:'desktop',MANAGED_WINDOWS:'managed-windows'},
         ScreenOrientationSetting:{SENSOR_LANDSCAPE:'landscape'},canTransitionEngineState:()=>true};
       if(name.includes('WineUpgradeGuard'))return {WineUpgradeGuard:class {needsReset(){return false;}}};
       if(name.includes('AppSettingsStore'))return {AppSettingsStore:{getInstance:()=>({getGlobalSettings:()=>settings})}};
+      if(name.includes('DesktopModeService'))return {MODE_VIRTUAL:'virtual',MODE_FUSION:'fusion',DesktopModeService:{getInstance:()=>desktopSettings}};
+      if(name.includes('DeviceCapabilityPolicy'))return {DeviceCapabilityPolicy:{isPhoneDevice:()=>deviceType==='phone'}};
       if(name.includes('WineWindowManager'))return {WineWindowManager:{getInstance:()=>wm}};
       return {};
     }
   };
+  const wmContext={...context,exports:{}};
+  vm.runInNewContext(wmCompiled,wmContext);
+  wm=new wmContext.exports.WineWindowManager();
+  wm.prepareOutputForOrientation=()=>{};
+  wm.applyModePolicy();
   vm.runInNewContext(compiled,context);
   const s=new context.exports.WineEngineService();
   s.context={};s.selectedD3DBackend=()=> 'dxvk_legacy';s.getBundledRuntimeVersion=()=>new Uint8Array([1]);
@@ -53,13 +64,67 @@ function fixture() {
     now=until;await flush();
   }
   const start=()=>s.startSession('desktop','desktop','/games','reuse');
-  return {s,napi,settings,start,flush,advance,timers,stats:()=>({launches,stops}),snapshot:()=>snapshot};
+  return {s,wm,napi,settings,desktopSettings,storage,modes,nativeDesktop:()=>nativeDesktop,start,flush,advance,timers,stats:()=>({launches,stops}),snapshot:()=>snapshot};
 }
 function deferred(){let resolve,reject;const promise=new Promise((a,b)=>{resolve=a;reject=b;});return {promise,resolve,reject};}
 const watchdog=setTimeout(()=>{console.error("Unresolved startup test");process.exit(1);},15000);
 (async()=>{
   let count=0;
   async function test(name,run){await run();++count;console.log('PASS '+name);}
+  await test('Steam desktop request survives PC fusion preferences and Want override',async()=>{
+    for(const override of ['', 'fusion']) {
+      const f=fixture('fusion','2in1',override);
+      assert.equal(f.nativeDesktop(),false);
+      f.napi.startServer=()=>{assert.equal(f.nativeDesktop(),true,'desktop policy must precede native startup');return true;};
+      const p=f.s.ensureReady('desktop','desktop','/games');await f.flush();
+      Object.assign(f.snapshot(),{state:'ready',active:false});await f.advance(250);
+      assert.equal(await p,true);assert.equal(f.s.getPresentationMode(),'desktop');
+      assert.equal(f.wm.getDesktopMode(),true);
+      assert.equal(f.storage.get('winehua.desktopMode'),true);
+      assert.equal(f.storage.get('winehua.presentationMode'),'desktop');
+      assert.equal(f.desktopSettings.mode,'fusion','session requirement cannot rewrite preferences');
+      assert.equal(f.desktopSettings.getOverrideMode(),override);
+    }
+  });
+  await test('running fusion session drains before switching to Steam desktop and then reuses it',async()=>{
+    const f=fixture('fusion');
+    let p=f.s.ensureReady('desktop','managed-windows','/games');await f.flush();
+    Object.assign(f.snapshot(),{state:'ready',active:false});await f.advance(250);assert.equal(await p,true);
+    const stop=f.napi.stopAll;f.napi.stopAll=()=>{assert.equal(f.nativeDesktop(),false);stop();};
+    p=f.s.ensureReady('desktop','desktop','/games');await f.advance(300);
+    assert.equal(f.nativeDesktop(),true);
+    Object.assign(f.snapshot(),{state:'ready',active:false});await f.advance(250);assert.equal(await p,true);
+    assert.equal(f.stats().stops,1);assert.equal(f.stats().launches,2);
+    assert.equal(await f.s.ensureReady('desktop','desktop','/games'),true);
+    assert.equal(f.stats().stops,1);assert.equal(f.stats().launches,2);
+  });
+  await test('default-mode restart resolves preferences without changing the live native mode before drain',async()=>{
+    const f=fixture('fusion');
+    let p=f.start();await f.flush();Object.assign(f.snapshot(),{state:'ready',active:false});
+    await f.advance(250);assert.equal(await p,true);
+    const stop=f.napi.stopAll;f.napi.stopAll=()=>{assert.equal(f.nativeDesktop(),true);stop();};
+    p=f.s.ensureEngineReady();await f.advance(300);
+    Object.assign(f.snapshot(),{state:'ready',active:false});await f.advance(250);assert.equal(await p,true);
+    assert.equal(f.nativeDesktop(),false);assert.equal(f.s.getPresentationMode(),'managed-windows');
+    assert.equal(f.desktopSettings.mode,'fusion');
+  });
+  await test('session policy preserves phone desktop constraint, default preferences and Want overrides',async()=>{
+    for(const [device,saved,override,requested,expected] of [
+      ['2in1','virtual','','managed-windows','managed-windows'],
+      ['phone','fusion','fusion','managed-windows','desktop'],
+      ['tablet','virtual','','default','desktop'],
+      ['2in1','fusion','','default','managed-windows'],
+      ['2in1','fusion','virtual','default','desktop'],
+      ['tablet','virtual','fusion','default','managed-windows']
+    ]) {
+      const f=fixture(saved,device,override);
+      const begin=()=>requested==='default'?f.s.ensureEngineReady():f.s.ensureReady('desktop',requested,'/games');
+      const p=begin();await f.flush();Object.assign(f.snapshot(),{state:'ready',active:false});
+      await f.advance(250);assert.equal(await p,true);
+      assert.equal(f.s.getPresentationMode(),expected);assert.equal(f.nativeDesktop(),expected==='desktop');
+      assert.equal(await begin(),true,'normalized mode should reuse the ready session');assert.equal(f.stats().launches,1);
+    }
+  });
   await test('terminal before waiter/native callback is recovered from retained state',async()=>{
     const f=fixture();f.napi.launchClient=()=>{Object.assign(f.snapshot(),{generation:1,active:false,state:'ready',phase:'explorer'});return 0;};
     assert.equal(await f.start(),true);assert.equal(f.s.state,State.READY);assert.equal(f.timers.size,0);
