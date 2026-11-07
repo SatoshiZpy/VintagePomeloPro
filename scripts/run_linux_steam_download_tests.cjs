@@ -39,18 +39,23 @@ const config = {ConfigurationFiles: {fileHash: async p => sha(fs.readFileSync(re
   read: p => fs.readFileSync(real(p)),
   text: b => Buffer.from(b).toString('utf8'), bytes: s => Buffer.from(s),
   json: (p,s) => { assert.notEqual(s,'','OHOS empty text encoding is not a safe reset record');fs.writeFileSync(real(p),s); }}};
-let responses = [], calls = [], urls = [];
+let responses = [], calls = [], urls = [], rangeTransport = null;
+let activeRequests = 0, peakRequests = 0;
 const http = {RequestMethod: {GET: 'GET'}, createHttp() {
-  const events = {}; let destroyed = false;
-  return {on: (n,f) => {events[n]=f;}, off: n => {delete events[n];}, destroy: () => {destroyed=true;},
+  const events = {}; let destroyed = false, active = false;
+  return {on: (n,f) => {events[n]=f;}, off: n => {delete events[n];}, destroy: () => {
+    destroyed=true;if(active){active=false;activeRequests--;}
+  },
     async requestInStream(url, options) {
+      active=true;activeRequests++;peakRequests=Math.max(peakRequests,activeRequests);
       urls.push(url); calls.push(options.header.range || 'full');
-      assert.ok(responses.length,'unexpected HTTP request');
-      const r = responses.shift();
+      if (!rangeTransport) assert.ok(responses.length,'unexpected HTTP request');
+      const r = rangeTransport ? rangeTransport(url, options) : responses.shift();
       const status = r.status ?? 200;
-      events.headersReceive?.({...(r.noStatus ? {} : {'status-line': `HTTP/2 ${status}`}),
+      if(!r.noHeaders) events.headersReceive?.({...(r.noStatus ? {} : {'status-line': `HTTP/2 ${status}`}),
         'content-length': String((r.body || []).length), ...(r.range ? {'content-range': r.range} : {})});
       if(r.hang) {if(r.hook)setTimeout(r.hook,1);return new Promise(()=>{});}
+      if(r.delay) await new Promise(resolve=>setTimeout(resolve,r.delay));
       const emit = () => { if(!destroyed) events.dataReceive?.(Uint8Array.from(r.body || []).buffer); };
       if(r.early) {setTimeout(()=>{emit();events.dataEnd?.();},2);return status;}
       emit(); if(r.hook) r.hook();
@@ -58,9 +63,12 @@ const http = {RequestMethod: {GET: 'GET'}, createHttp() {
       events.dataEnd?.(); return status;
     }};
 }};
+const parallel = load('service/LinuxSteamParallelDownload.ets', {
+  '@kit.NetworkKit': {http}, '@kit.CoreFileKit': {fileIo:io}, '../model/LinuxSteamDownloadModels': model
+}, {setTimeout: (f,ms) => setTimeout(f, Math.min(ms,500))});
 const download = load('service/LinuxSteamComponentDownload.ets', {
   '@kit.NetworkKit': {http}, '@kit.CoreFileKit': {fileIo:io}, './ConfigurationFiles':config,
-  '../model/LinuxSteamDownloadModels': model
+  '../model/LinuxSteamDownloadModels': model, './LinuxSteamParallelDownload': parallel
 }, {setTimeout: (f,ms) => setTimeout(f, Math.min(ms,5))});
 const bytes = Buffer.from('official-valve-content');
 const archive = {id:'official',name:'Official',url:'https://client-update.steamstatic.com/test.zip',bytes:bytes.length,sha256:sha(bytes),unpackedBytes:bytes.length};
@@ -118,6 +126,8 @@ async function main() {
     {status:206,noStatus:true,range:`bytes 4194304-${large.length-1}/${large.length}`,body:large.subarray(4194304)}];calls=[];
   await new download.LinuxSteamComponentDownload().fetch({...archive,bytes:large.length,sha256:sha(large)},path.join(temporary,'segments.zip'),()=>{});
   assert.deepEqual(calls,['bytes=0-4194303',`bytes=4194304-${large.length-1}`]);
+  await parallelCases();
+  await slowConnectionCases();
   let paused = new download.LinuxSteamComponentDownload();
   const pausePath = path.join(temporary,'paused.zip');
   responses=[{body:bytes.subarray(0,5),hook:()=>paused.pause()}];calls=[];
@@ -408,5 +418,130 @@ async function main() {
   console.log('PASS: actual installer space preflight, corrupt unpacked file, activation only after success, concurrent install, cache/staging cleanup, existing userdata preserved and ready idempotence');
   console.log('PASS: wrong/corrupt offline bundles rejected before extraction, no-network repair, reset/reimport, maintenance locking; game files, install records, accounts, saves and unknown files preserved');
   console.log('PASS: fresh Download/C installs include all five SDK files; old missing-SDK install reports repair and only downloads SDK; same-size damaged SDK repaired by hash');
+}
+async function parallelCases() {
+  // Non-repeating bytes catch duplicated or incorrectly ordered range writes.
+  const payload=crypto.randomBytes(9*1024*1024+73);
+  const item={...archive,bytes:payload.length,sha256:sha(payload)};
+  assert.equal(activeRequests,0);peakRequests=0;
+  function response(url,options) {
+    const match=/^bytes=(\d+)-(\d+)$/.exec(options.header.range);
+    assert.ok(match,'parallel requests must be bounded');
+    const start=Number(match[1]),end=Number(match[2]);
+    return {status:206,noStatus:true,range:`bytes ${start}-${end}/${payload.length}`,
+      body:payload.subarray(start,end+1),delay:2};
+  }
+  const dest=path.join(temporary,'parallel.zip');
+  rangeTransport=response;calls=[];urls=[];
+  await new download.LinuxSteamComponentDownload().fetch(item,dest,()=>{});
+  assert.deepEqual(fs.readFileSync(dest),payload);
+  assert.equal(peakRequests,4,'at most four block requests run concurrently');
+  assert.equal(activeRequests,0,'all requests are destroyed after success');
+  assert.equal(new Set(urls.slice(0,3)).size,3,'compare all three official sources');
+  assert.ok(calls.length>4);
+  // The fastest successful response wins, even if it is not the first source.
+  const fast=path.join(temporary,'parallel-fast.zip');
+  rangeTransport=(url,options)=>({...response(url,options),delay:url.includes('media.steampowered')?1:20});
+  urls=[];await new download.LinuxSteamComponentDownload().fetch(item,fast,()=>{});
+  assert.ok(urls.slice(3).every(url=>url.includes('media.steampowered')),'use the measured winning source');
+  assert.deepEqual(fs.readFileSync(fast),payload);
+  // Existing sequential checkpoints remain usable with the parallel path.
+  const resume=path.join(temporary,'parallel-resume.zip');
+  fs.writeFileSync(resume+'.part',payload.subarray(0,731));fs.writeFileSync(resume+'.part.append-v1',item.sha256);
+  rangeTransport=response;calls=[];
+  await new download.LinuxSteamComponentDownload().fetch(item,resume,()=>{});
+  assert.ok(calls.slice(0,3).every(value=>value==='bytes=731-262874'));
+  assert.deepEqual(fs.readFileSync(resume),payload);
+  // Failed/later blocks cannot be appended across a gap; switch CDN and retry.
+  const fail=path.join(temporary,'parallel-gap.zip');
+  rangeTransport=(url,options)=>{
+    const r=response(url,options);
+    if(url.includes('client-update') && options.header.range==='bytes=1310720-2359295') {
+      return {...r,status:206,range:`bytes 0-1048575/${payload.length}`,delay:1};
+    }return r;
+  };
+  urls=[];await new download.LinuxSteamComponentDownload().fetch(item,fail,()=>{});
+  assert.deepEqual(fs.readFileSync(fail),payload,'never merge an invalid range or append beyond a gap');
+  assert.ok(urls.slice(3).some(url=>!url.includes('client-update')),'a failed range changes the source');
+  // All mirrors can ignore Range. No full body may enter a small range buffer;
+  // fall back to the original streaming path, which accepts a complete 200.
+  const fallback=path.join(temporary,'parallel-no-range.zip');
+  rangeTransport=()=>({status:200,body:payload});
+  calls=[];await new download.LinuxSteamComponentDownload().fetch(item,fallback,()=>{});
+  assert.deepEqual(fs.readFileSync(fallback),payload);
+  assert.equal(calls.length,4,'three probes then a single serial full response');
+  // Pause settles even if requestInStream never resolves (e.g. DNS stall).
+  let task=new download.LinuxSteamComponentDownload();
+  const hangingTask=task;
+  rangeTransport=()=>({noHeaders:true,hang:true,hook:()=>hangingTask.pause()});
+  await assert.rejects(task.fetch(item,path.join(temporary,'parallel-hung.zip'),()=>{}),e=>e.code==='PAUSED');
+  const pause=path.join(temporary,'parallel-pause.zip');
+  task=new download.LinuxSteamComponentDownload();let interrupted=false;
+  rangeTransport=response;
+  await assert.rejects(task.fetch(item,pause,received=>{
+    if(received>262144 && !interrupted){interrupted=true;task.pause();}
+  }),e=>e.code==='PAUSED');
+  const committed=fs.statSync(pause+'.part').size;
+  assert.ok(committed>=262144 && committed<payload.length);
+  assert.deepEqual(fs.readFileSync(pause+'.part'),payload.subarray(0,committed));
+  calls=[];await new download.LinuxSteamComponentDownload().fetch(item,pause,()=>{});
+  assert.deepEqual(fs.readFileSync(pause),payload,'pause/resume keeps exactly the contiguous prefix');
+  // Same-length corruption still reaches the full-file hash gate. A clean
+  // sequential retry replaces it rather than publishing a corrupt archive.
+  const corrupt=path.join(temporary,'parallel-corrupt.zip');
+  rangeTransport=(url,options)=>{
+    const r=response(url,options);
+    if(options.header.range==='bytes=262144-1310719')r.body=Buffer.alloc(r.body.length);
+    return r;
+  };
+  await new download.LinuxSteamComponentDownload().fetch(item,corrupt,()=>{});
+  assert.deepEqual(fs.readFileSync(corrupt),payload);
+  assert.equal(activeRequests,0,'failed and cancelled transfers leave no requests running');
+  rangeTransport=null;responses=[];urls=[];calls=[];
+  console.log('PASS: bounded four-way ranges, fastest official source, old checkpoints, out-of-order/gap rejection, 200 fallback, cancellation, resume and corrupt range hash rejection');
+}
+async function slowConnectionCases() {
+  for (const stallsAfterFastStart of [false,true]) {
+    let now=0,id=0;const timers=new Map(),pending=[];
+    const setTimer=(fn,ms)=>{const key=++id;timers.set(key,{at:now+ms,fn});return key;};
+    const advance=ms=>{
+      const until=now+ms;
+      for(;;){const next=[...timers].filter(([,t])=>t.at<=until).sort((a,b)=>a[1].at-b[1].at)[0];
+        if(!next)break;timers.delete(next[0]);now=next[1].at;next[1].fn();}
+      now=until;
+    };
+    const flush=async()=>{for(let i=0;i<12;i++)await Promise.resolve();};
+    const payload=crypto.randomBytes(2*1024*1024);
+    const source={...archive,bytes:payload.length,sha256:sha(payload)};
+    const wire={RequestMethod:{GET:'GET'},createHttp(){
+      const events={};let closed=false;
+      return {on:(key,fn)=>events[key]=fn,off:key=>delete events[key],destroy:()=>closed=true,
+        requestInStream(url,options){
+          const offset=options.header.range?Number(options.header.range.match(/bytes=(\d+)/)[1]):0;
+          const code=offset?206:200;
+          events.headersReceive({'status-line':`HTTP/2 ${code}`,'content-length':String(payload.length-offset),
+            ...(offset?{'content-range':`bytes ${offset}-${payload.length-1}/${payload.length}`}:{})});
+          return new Promise(resolve=>pending.push({url,offset,
+            send:bytes=>{assert.equal(closed,false);events.dataReceive(Uint8Array.from(bytes).buffer);},
+            end:()=>{events.dataEnd();resolve(code);}}));
+        }};
+    }};
+    const api=load('service/LinuxSteamComponentDownload.ets',{
+      '@kit.NetworkKit':{http:wire},'@kit.CoreFileKit':{fileIo:io},'./ConfigurationFiles':config,
+      '../model/LinuxSteamDownloadModels':model,'./LinuxSteamParallelDownload':parallel
+    },{setTimeout:setTimer,clearTimeout:key=>timers.delete(key)});
+    const dest=path.join(temporary,stallsAfterFastStart?'late-stall.zip':'slow-21kb.zip');
+    const work=new api.LinuxSteamComponentDownload().fetch(source,dest,()=>{});
+    await flush();assert.equal(pending.length,1);
+    const received=stallsAfterFastStart?600*1024:21*1024*8;
+    pending[0].send(payload.subarray(0,received));advance(8000);await flush();
+    if(stallsAfterFastStart){assert.equal(pending.length,1);advance(8000);await flush();}
+    advance(500);await flush();assert.equal(pending.length,2,'slow/stalled connections switch official source');
+    assert.ok(pending[1].url.includes('media.steampowered'));
+    assert.equal(pending[1].offset,received,'switching source resumes instead of restarting');
+    pending[1].send(payload.subarray(received));pending[1].end();await work;
+    assert.deepEqual(fs.readFileSync(dest),payload);assert.equal(timers.size,0,'watchdog timers are cleared');
+  }
+  console.log('PASS: 21 KiB/s and stalls after a fast start both switch source at a bounded window and preserve downloaded bytes');
 }
 main().catch(e=>{console.error(e);process.exitCode=1;}).finally(()=>fs.rmSync(temporary,{recursive:true,force:true}));
