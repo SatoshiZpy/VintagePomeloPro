@@ -238,7 +238,7 @@ def restore_libraries(base, candidate):
                 for item in built.infolist():
                     source = trusted if item.filename.startswith('libs/') and not item.is_dir() else built
                     info = copy.copy(source.getinfo(item.filename))
-                    with source.open(item.filename) as data, out.open(info, 'w', force_zip64=True) as destination:
+                    with source.open(item.filename) as data, out.open(info, 'w') as destination:
                         shutil.copyfileobj(data, destination, 1024 * 1024)
         temporary.replace(candidate)
     finally:

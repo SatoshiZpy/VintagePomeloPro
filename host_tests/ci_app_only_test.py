@@ -123,6 +123,8 @@ class ReuseTests(unittest.TestCase):
         self.assertEqual(reuse.same_payload(before, after), 3)
         with zipfile.ZipFile(after) as z:
             self.assertEqual(z.read('ets/modules.abc'), b'new compiled app')
+            # Harmony's installer must receive ordinary ZIP32 member headers.
+            self.assertTrue(all(info.extract_version < 45 for info in z.infolist()))
         hap(after, {'resources/rawfile/wine-data.zip': b'wrong runtime'})
         reuse.restore_libraries(before, after)
         with self.assertRaisesRegex(ValueError, 'bytes changed'):
