@@ -19,6 +19,11 @@ on:
         description: 'Release tag (dev-xx / rc-xx, 留空则只构建不发布)'
         required: false
         type: string
+      full_rebuild:
+        description: 'Force a full native source rebuild (ignore compatible runtime artifacts)'
+        required: false
+        default: false
+        type: boolean
 
 # GITHUB_TOKEN 权限:
 #   contents: write — 拉源码 + 发布 Release (需要 write)
@@ -26,6 +31,7 @@ on:
 permissions:
   contents: write
   packages: read
+  actions: read
 
 jobs:
   gnu-components:
@@ -136,9 +142,19 @@ jobs:
             --release-tag "$RELEASE_TAG" --output ci-artifacts/ci-source.json
           echo "commit=$expected_sha" >> "$GITHUB_OUTPUT"
 
+      - name: Select verified runtime for app-only changes
+        id: reuse
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          FORCE_FULL: ${{ github.event_name == 'pull_request' || startsWith(github.ref, 'refs/tags/') || inputs.release_tag != '' || inputs.full_rebuild == true }}
+        run: |
+          python3 host_tests/ci_app_only_test.py
+          python3 scripts/ci_app_only.py select
+
       # Catch source-overlay drift against the exact recursive submodule before
       # beginning the long Native and graphics build.
       - name: Verify VirGL overlays against pinned source
+        if: steps.reuse.outputs.fast != 'true'
         run: python3 host_tests/virgl_patch_application_test.py --source thirdparty/virglrenderer
 
       - name: Upload source version manifest
@@ -205,6 +221,7 @@ jobs:
       # 是 VKD3D-Proton meson 的硬依赖. Dockerfile 已同步声明, 镜像更新后
       # 这里 no-op.
       - name: Ensure CI build dependencies present
+        if: steps.reuse.outputs.fast != 'true'
         run: |
           packages=()
           if [ ! -f /usr/share/aclocal/ltdl.m4 ]; then
@@ -273,6 +290,7 @@ jobs:
           fi
 
       - name: Verify native build prerequisites before compilation
+        if: steps.reuse.outputs.fast != 'true'
         run: |
           set -euo pipefail
           for tool in gcc g++ make cmake ninja meson bison flex autoconf automake \
@@ -294,6 +312,7 @@ jobs:
           rm ci-artifacts/arm64-toolchain-probe
 
       - name: Show environment
+        if: steps.reuse.outputs.fast != 'true'
         run: |
           echo "== toolchain =="
           gcc --version | head -1
@@ -312,6 +331,7 @@ jobs:
           nproc
 
       - name: Restore and verify pinned Linux Steam and GNU Proton components
+        if: steps.reuse.outputs.fast != 'true'
         run: |
           set -euo pipefail
           python3 scripts/prepare_linux_runtime_components.py --report ci-artifacts/gnu-components.json
@@ -319,6 +339,7 @@ jobs:
       # Replay first, before the hour-long native dependency build. This uses
       # small fixtures and leaves the verified checkout untouched.
       - name: Verify fresh and incremental FEX source overlays
+        if: steps.reuse.outputs.fast != 'true'
         run: python3 host_tests/fex_overlay_replay_test.py --output ci-artifacts/fex-overlays.json
 
       - name: Install ArkTS project dependencies
@@ -328,6 +349,7 @@ jobs:
           git diff --exit-code HEAD --ignore-submodules=all
 
       - name: Test Proton runtime lifecycle and Steam downloads
+        if: steps.reuse.outputs.fast != 'true'
         run: |
           python3 scripts/build_steam_client_session.py --verify-only
           python3 scripts/build_linux_steam_posix.py --verify-only
@@ -366,12 +388,26 @@ jobs:
           done
 
       - name: Configure every Native target before the long source build
+        if: steps.reuse.outputs.fast != 'true'
         run: |
           python3 scripts/ci_preflight.py --skip-tests \
             --sdk /apps/harmony/sdk/default/openharmony --report ci-artifacts/native-preflight.json
           git diff --exit-code HEAD --ignore-submodules=all
 
+      - name: Test and build app-only HAP with verified runtime
+        if: steps.reuse.outputs.fast == 'true'
+        run: |
+          for suite in run_wine_startup_tests run_linux_steam_download_tests run_linux_steam_window_host_tests run_edge_window_tests run_deck_launch_feedback_tests run_linux_proton_component_tests; do
+            /apps/harmony/tool/node/bin/node "scripts/$suite.cjs" \
+              /apps/harmony/sdk/default/openharmony/ets/build-tools/ets-loader/node_modules/typescript
+          done
+          make -f ci/Makefile.app-only hap-unsigned-app-only
+          python3 scripts/check_runtime_components.py \
+            --hap entry/build/default/outputs/default/entry-default-unsigned.hap \
+            --source-build-manifest ci-artifacts/ci-runtime-source.json
+
       - name: Build HAP
+        if: steps.reuse.outputs.fast != 'true'
         env:
           NATIVE_ARCH: arm64-v8a
           WINE_ARCH: aarch64
@@ -399,8 +435,12 @@ jobs:
           ls -lh "$out_dir"
           hap="$out_dir/entry-default-unsigned.hap"
           test -s "$hap"
-          python3 scripts/verify_ci_release.py artifact --manifest ci-artifacts/ci-source.json \
-            --hap "$hap" --output ci-artifacts/ci-artifact.json
+          if [ "${{ steps.reuse.outputs.fast }}" = true ]; then
+            python3 scripts/ci_app_only.py verify
+          else
+            python3 scripts/verify_ci_release.py artifact --manifest ci-artifacts/ci-source.json \
+              --hap "$hap" --output ci-artifacts/ci-artifact.json
+          fi
           python3 scripts/prepare_linux_runtime_components.py --hap "$hap" --report ci-artifacts/gnu-components-hap.json
           echo "hap=$hap" >> "$GITHUB_OUTPUT"
 
@@ -414,6 +454,8 @@ jobs:
             ci-artifacts/ci-artifact.json
             ci-artifacts/gnu-components.json
             ci-artifacts/gnu-components-hap.json
+            ci-artifacts/ci-runtime-source.json
+            ci-artifacts/ci-app-only.json
           if-no-files-found: error
           retention-days: 14
 

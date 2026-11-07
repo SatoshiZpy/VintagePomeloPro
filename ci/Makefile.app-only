@@ -1,0 +1,6 @@
+# Linux buildenv only. Runtime selection/verification is mandatory.
+.PHONY: hap-unsigned-app-only
+hap-unsigned-app-only:
+	python3 scripts/ci_app_only.py stage
+	/apps/harmony/bin/hvigorw --mode module -p product=default -p buildMode=release assembleHap --no-daemon
+	python3 scripts/ci_app_only.py verify

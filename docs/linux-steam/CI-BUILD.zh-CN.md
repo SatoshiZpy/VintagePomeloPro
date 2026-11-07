@@ -103,3 +103,25 @@ python3 scripts/prepare_linux_runtime_components.py --verify-only
 完整 GNU 从零构建编排仍是独立工作，当前发布不得声称已实现该能力。
 仅修改 OHOS 宿主或 ArkTS 不需重新发布同一 GNU 二进制，锁覆盖的 GNU 输入
 发生变化则必须重新验包。离线导入的客户端包与此构建依赖发布相互独立。
+
+
+## 应用层快速构建
+
+普通分支构建先寻找本仓库、同分支、成功完整构建的未过期 HAP。仅 ArkTS、
+测试及说明文档变更时，可以复用其原生库和 rawfile 运行时；源码、gitlink、
+补丁、运行时锁、资源、NAPI 类型声明、依赖锁、SDK 配置、构建镜像或原生编译
+命令/参数有变化，均继续完整构建。没有可验证的基础产物也自动完整构建。
+PR 和 release tag 构建保持完整路径；手动运行可勾选 `full_rebuild` 强制重建。
+
+快速路径在相同 Linux CI 镜像里执行 `make -f ci/Makefile.app-only
+hap-unsigned-app-only`：关闭 CMake 及再次 strip，重新编译 ArkTS，重新生成
+HAP，再比对全部 `libs/` 和 `resources/rawfile/` 成员与基础包逐字节相同。
+保留原 runtime sourceBuild/二进制校验凭据，绝不将旧原生字节标成新编译；
+`ci-source.json` 标识当前应用源码，`ci-runtime-source.json` 保存完整构建源码，
+`ci-app-only.json` 记录基础 run、artifact、哈希和相同载荷数量。
+`ci-artifact.json` 分别记录 `commit`、`runtimeCommit` 和 `buildKind=app-only`。
+只使用完整构建作为基础，不串联复用包。完整构建仍负责原生测试与发布验证。
+
+快速路径跳过原生依赖编译，仍执行启动、下载、窗口及 Proton 生命周期测试和
+真实 ArkTS 编译；实际用时受构建镜像拉取、子模块恢复及产物下载影响，不承诺
+固定分钟数。任何载荷比较或打包验证失败都会阻止交付。
