@@ -114,6 +114,23 @@ class ReuseTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'member set'):
             reuse.same_payload(before, after)
 
+    def test_sdk_elf_processing_is_restored_without_hiding_runtime_or_app_changes(self):
+        before, after = self.root / 'base.hap', self.root / 'new.hap'
+        hap(before)
+        hap(after, {'libs/arm64-v8a/libentry.so': b'SDK processed ELF',
+                    'ets/modules.abc': b'new compiled app'})
+        reuse.restore_libraries(before, after)
+        self.assertEqual(reuse.same_payload(before, after), 3)
+        with zipfile.ZipFile(after) as z:
+            self.assertEqual(z.read('ets/modules.abc'), b'new compiled app')
+        hap(after, {'resources/rawfile/wine-data.zip': b'wrong runtime'})
+        reuse.restore_libraries(before, after)
+        with self.assertRaisesRegex(ValueError, 'bytes changed'):
+            reuse.same_payload(before, after)
+        hap(after, extra={'libs/x86_64/extra.so': b'extra'})
+        with self.assertRaisesRegex(ValueError, 'member set'):
+            reuse.restore_libraries(before, after)
+
     def test_extraction_rejects_traversal_duplicate_and_symlink(self):
         for kind in ['traversal', 'symlink', 'duplicate']:
             archive = self.root / f'{kind}.zip'

@@ -115,7 +115,8 @@ PR 和 release tag 构建保持完整路径；手动运行可勾选 `full_rebuil
 
 快速路径在相同 Linux CI 镜像里执行 `make -f ci/Makefile.app-only
 hap-unsigned-app-only`：关闭 CMake 及再次 strip，重新编译 ArkTS，重新生成
-HAP，再比对全部 `libs/` 和 `resources/rawfile/` 成员与基础包逐字节相同。
+HAP。SDK 即使关闭 strip 仍可能处理 ELF，因此在无签名包中恢复已验证的原生库
+原始字节，保留新编译的 ArkTS，再比对全部 `libs/` 和 `resources/rawfile/` 成员与基础包逐字节相同。
 保留原 runtime sourceBuild/二进制校验凭据，绝不将旧原生字节标成新编译；
 `ci-source.json` 标识当前应用源码，`ci-runtime-source.json` 保存完整构建源码，
 `ci-app-only.json` 记录基础 run、artifact、哈希和相同载荷数量。

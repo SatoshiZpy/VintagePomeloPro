@@ -5,6 +5,7 @@ The runtime's original source receipts stay intact. A separate app-only receipt
 records the new ArkTS commit, base build and byte-for-byte payload comparison.
 """
 import argparse
+import copy
 import hashlib
 import json
 import os
@@ -221,6 +222,29 @@ def stage():
     print('Staged verified runtime; native compilation and stripping disabled for app-only build')
 
 
+def restore_libraries(base, candidate):
+    # Hvigor can process ELF metadata even with nativeLib.debugSymbol.strip=false.
+    # Package the trusted full-build libraries verbatim AFTER its package step;
+    # keep the newly compiled ArkTS/resources. The unsigned HAP is signed later.
+    temporary = candidate.with_suffix('.native-preserved.hap')
+    try:
+        with zipfile.ZipFile(base) as trusted, zipfile.ZipFile(candidate) as built:
+            expected = {n for n in trusted.namelist() if immutable(n)}
+            actual = {n for n in built.namelist() if immutable(n)}
+            if expected != actual or len(built.namelist()) != len(set(built.namelist())):
+                raise ValueError('Runtime payload member set changed')
+            with zipfile.ZipFile(temporary, 'w') as out:
+                out.comment = built.comment
+                for item in built.infolist():
+                    source = trusted if item.filename.startswith('libs/') and not item.is_dir() else built
+                    info = copy.copy(source.getinfo(item.filename))
+                    with source.open(item.filename) as data, out.open(info, 'w', force_zip64=True) as destination:
+                        shutil.copyfileobj(data, destination, 1024 * 1024)
+        temporary.replace(candidate)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
 def same_payload(base, candidate):
     with zipfile.ZipFile(base) as before, zipfile.ZipFile(candidate) as after:
         expected = {n for n in before.namelist() if immutable(n)}
@@ -258,7 +282,7 @@ def verify():
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('mode', choices=['select', 'stage', 'verify'])
+    parser.add_argument('mode', choices=['select', 'stage', 'repack', 'verify'])
     args = parser.parse_args()
     if args.mode == 'select':
         try:
@@ -272,6 +296,11 @@ def main():
                 out.write('fast=' + str(fast).lower() + '\n')
     elif args.mode == 'stage':
         stage()
+    elif args.mode == 'repack':
+        value = state()
+        restore_libraries(Path(value['baseHap']), HAP)
+        same_payload(Path(value['baseHap']), HAP)
+        print('Restored original native bytes after SDK packaging; runtime comparison passed')
     else:
         verify()
 
