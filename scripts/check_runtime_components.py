@@ -21,8 +21,7 @@ from stamp_wine_builtin_identity import validate_archive as validate_builtin_ide
 
 from gstreamer_inventory import (VERSION as GSTREAMER_VERSION, PLUGINS,
     REQUIRED_PLUGINS, REQUIRED_ELEMENTS, fingerprint, check_elf)
-MONO_VERSION = "11.1.0"
-MONO_SHA256 = "deb0341431f8260b209fff6bc79ddcc5414b97f8e9236ab9fbdca4ce59e0a9b9"
+from wine_mono import validate_payload as validate_mono_payload
 DXVK_LEGACY_VERSION = "1.10.3"
 DXVK_MODERN_VERSION = "2.6.2"
 VKD3D_VERSION = "2.6"
@@ -556,30 +555,10 @@ def validate_runtime_payload(archive: Archive, candidate=None) -> RuntimeInfo:
         except (ValueError, KeyError, TypeError) as error:
             raise ValidationError("ICU runtime identity invalid: " + str(error)) from error
 
-    mono = manifest.get("mono")
-    if not isinstance(mono, dict):
-        raise ValidationError("component manifest has no mono object")
-    mono_path = f"share/wine/mono/wine-mono-{MONO_VERSION}-x86.msi"
-    require_equal(mono.get("version"), MONO_VERSION, "Wine Mono version")
-    require_equal(mono.get("msi"), mono_path, "Wine Mono path")
-    mono_status = mono.get("status")
-    if mono_status == "bundled":
-        require_equal(mono.get("sha256"), MONO_SHA256, "Wine Mono manifest checksum")
-        actual_mono_sha256 = hashlib.sha256(archive.read(mono_path)).hexdigest()
-        require_equal(actual_mono_sha256, MONO_SHA256, "Wine Mono payload checksum")
-        for windows_arch in (pe_arch, "i386-windows"):
-            archive.require_file(f"bin/{windows_arch}/appwiz.cpl")
-    elif mono_status == "disabled":
-        require_equal(mono.get("sha256"), "", "disabled Wine Mono checksum")
-        if mono_path in archive.name_set:
-            raise ValidationError("Wine Mono MSI is present although component manifest marks it disabled")
-        for windows_arch in (pe_arch, "i386-windows"):
-            if f"bin/{windows_arch}/appwiz.cpl" in archive.name_set:
-                raise ValidationError(
-                    "appwiz.cpl is present although component manifest marks Wine Mono disabled"
-                )
-    else:
-        raise ValidationError(f"invalid Wine Mono status: {mono_status!r}")
+    try:
+        validate_mono_payload(archive.read, archive.name_set, manifest.get("mono"), pe_arch)
+    except (KeyError, ValueError) as error:
+        raise ValidationError("Wine Mono compatibility: " + str(error)) from error
 
     fonts = manifest.get("fonts")
     if not isinstance(fonts, dict):

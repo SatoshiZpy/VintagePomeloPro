@@ -73,7 +73,8 @@ assemble_pad() {
         local plugin_count font_count mono_status="disabled"
         local gstreamer_version
         gstreamer_version="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["version"])' "$SCRIPT_DIR/gstreamer_plugins.json")"
-        local mono_version="11.1.0"
+        local mono_version
+        mono_version="$(python3 "$SCRIPT_DIR/wine_mono.py" version)"
         local mono_sha256=""
         local llvm_readelf="$OHOS_SDK/native/llvm/bin/llvm-readelf"
         local plugin
@@ -108,10 +109,10 @@ assemble_pad() {
             local packaged_mono="$wine_data/share/wine/mono/wine-mono-${mono_version}-x86.msi"
             [ -s "$packaged_mono" ] || err "Packaged Wine Mono MSI missing: $packaged_mono"
             mono_sha256="$(sha256sum "$packaged_mono" | awk '{print $1}')"
-            [ "$mono_sha256" = "deb0341431f8260b209fff6bc79ddcc5414b97f8e9236ab9fbdca4ce59e0a9b9" ] || \
-                err "Unexpected Wine Mono checksum: $packaged_mono"
-            [ -s "$wine_data/bin/$wine_pe_dir/appwiz.cpl" ] || \
-                err "Wine Mono requires appwiz.cpl: $wine_data/bin/$wine_pe_dir/appwiz.cpl"
+            python3 "$SCRIPT_DIR/wine_mono.py" --source "$WINE_SRC" \
+                --msi "$packaged_mono" \
+                --installer "$wine_data/bin/$wine_pe_dir/appwiz.cpl" \
+                --installer "$wine_data/bin/i386-windows/appwiz.cpl"
             mono_status="bundled"
         fi
 
@@ -859,7 +860,8 @@ PYDXVK
     # Wine Mono (.NET runtime) is retained for explicit experiments only.
     # The direct-game default omits it and appwiz.cpl because Wine's first-run
     # installer is interactive and blocks wineboot without a device-side flow.
-    local wine_mono_msi="$BUILD_DIR/wine-mono/wine-mono-11.1.0-x86.msi"
+    local wine_mono_msi
+    wine_mono_msi="$BUILD_DIR/wine-mono/$(python3 "$SCRIPT_DIR/wine_mono.py" filename)"
     if [ "${BUILD_WINE_MONO:-0}" = "1" ]; then
         [ -s "$wine_mono_msi" ] || err "Wine Mono MSI missing: $wine_mono_msi"
         cp "$wine_mono_msi" "$wine_data/share/wine/mono/"

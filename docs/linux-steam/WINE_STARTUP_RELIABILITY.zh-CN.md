@@ -1,5 +1,31 @@
 # Wine 首次初始化挂起、恢复与黑屏验证
 
+## 2026-11-07：1.5.5 的 Mono 配套错误
+
+2in1 设备日志连续四轮出现 `Wine Mono 安装器`，随后窗口创建事件被
+`suppress created ... (wineboot init)` 拦截。最近一轮 17:28:12 进入 wineboot，
+17:28:24 出现被隐藏的 Mono 安装器，17:30:12 到达 120 秒上限并清理进程。
+prefix 的完成标记仍为 `wineboot-init-request`，缺少 WOW6432Node Shell 注册。
+这些注册缺口不能单独归因为 FEX；实际阻塞点是同步等待的 Mono 交互安装。
+
+设备实际 ARM64 `appwiz.cpl` 请求 `wine-mono-10.4.1-x86.msi`，组件目录却只含
+11.1.0。锁定的 wine-valve `cd547f7a` 中 `MONO_VERSION`、`WINE_MONO_VERSION`
+也都是 10.4.1；`addons.c` 的 MSI SHA-256 为
+`071f4b2887e1c97a11d791ff3d65be9429eed6dec4c2708888bfd546ba358e23`。
+从官方地址取得的 10.4.1 MSI（85,504,000 字节）与此哈希一致。
+
+修复将下载、Make sentinel、打包及最终 ZIP/HAP 校验共用 `scripts/wine_mono.py`
+的受审核版本配置。下载前检查所选 Wine 的两个源码版本及校验值；打包时还检查
+实际 ARM64/x64 与 i386 `appwiz.cpl` 中的 MSI 文件名和校验值，拒绝缓存旧模块、
+错误版本 MSI、改名 MSI 和损坏文件。禁用 Mono 时仍禁止带入交互安装器。
+没有延长启动时限或跳过 prefix 完整性检查。
+
+验证：Mono 回归 7 项、现有运行时组件回归 4 项、CI preflight 回归 1 项通过；
+锁定源码、设备实际 ARM64/i386 安装器与官方 MSI 的配套检查通过。
+尚未完成新 HAP 构建或设备初始化复测：本机没有 `winehua-dev` 镜像，设备写入
+等待授权。额外的 source-build contract 测试在 macOS 下使用 Mach-O fixture，
+不满足其 Linux ELF 假设，不能作为本次构建通过证据。
+
 2026-10-21，分支 `main_proton_steamarm64`，基线 `e5c43c4a`。本记录与首初始化修复、已有 Deck 和 Linux Steam 稳定性改动一并保存到源码提交。
 
 ## 结果

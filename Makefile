@@ -112,7 +112,7 @@ WINE_SENTINEL   := $(BUILD_DIR)/wine-native/tools/winegcc/winegcc
 GUEST_GFX_SENTINEL := $(BUILD_DIR)/guest_gfx/$(GUEST_ARCH)/winehua-guest-gfx.env
 MESA_OHOS_PATCH_INPUTS := $(SCRIPTS)/apply_mesa_ohos_patches.sh $(wildcard $(ROOT)/patches/mesa/*.patch)
 GUEST_VULKAN_SENTINEL := $(BUILD_DIR)/guest_vulkan/$(GUEST_ARCH)/manifest.json
-WINE_MONO_SENTINEL := $(BUILD_DIR)/wine-mono/wine-mono-11.1.0-x86.msi
+WINE_MONO_SENTINEL = $(BUILD_DIR)/wine-mono/$(shell python3 "$(SCRIPTS)/wine_mono.py" filename)
 HOST_VULKAN_SOURCE := $(ROOT)/smoke/venus_heaven_material_replay.c
 
 # ============================================================
@@ -325,6 +325,7 @@ $(STAMPS)/deps: $(SCRIPTS)/build_deps.sh $(SCRIPTS)/build_gnutls.sh $(SCRIPTS)/b
 	    BUILD_DIR="$(BUILD_DIR)" bash "$(SCRIPTS)/build_gnutls.sh" --check-identity && \
 	    ! [ "$(SCRIPTS)/build_gstreamer.sh" -nt $@ ] && \
 	    ! [ "$(SCRIPTS)/build_deps.sh" -nt $@ ] && \
+	    ! [ "$(SCRIPTS)/wine_mono.py" -nt $@ ] && \
 	    ! [ "$(SCRIPTS)/build_zlib_runtime.sh" -nt $@ ] && \
 	    ! [ "$(SCRIPTS)/build_libffi.sh" -nt $@ ] && \
 	    ! [ "$(SCRIPTS)/build_freetype.sh" -nt $@ ] && \
@@ -573,6 +574,7 @@ define assemble_rule
 assemble-$(1): $$(STAMPS)/$(1)/assemble
 
 $$(STAMPS)/$(1)/assemble: $(SCRIPTS)/assemble.sh $(SCRIPTS)/env.sh \
+	$(SCRIPTS)/wine_mono.py $(SCRIPTS)/check_runtime_components.py \
 	$(SCRIPTS)/stamp_wine_builtin_identity.py \
 	$(SCRIPTS)/build_linux_steam_pe_components.py $(SCRIPTS)/generate_linux_steam_bridge.py \
 	$(SCRIPTS)/steam_bridge_codecs.py $(SCRIPTS)/steam_bridge_contracts.py \
