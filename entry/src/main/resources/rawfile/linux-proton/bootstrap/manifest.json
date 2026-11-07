@@ -16,10 +16,28 @@
       "sha256": "db3e8898133bdec9c92a1bfd2e96d8dbbc7823caa377fa75395044b72cbf3343"
     },
     {
+      "name": "dxva2.dll",
+      "bytes": 917504,
+      "sha256": "66b41674bcca579fb42638647ff959fc4ae915a2b0599718f8ed03731e94389e",
+      "sourcePath": "files/lib/wine/aarch64-windows/dxva2.dll"
+    },
+    {
+      "name": "jsproxy.dll",
+      "bytes": 851968,
+      "sha256": "b77c9b876515c97eb2bcfe481942c219b6b60bf63e3b29543aa72c51ef49859a",
+      "sourcePath": "files/lib/wine/aarch64-windows/jsproxy.dll"
+    },
+    {
       "name": "lsass.exe",
       "sourcePath": "files/lib/wine/aarch64-windows/lsass.exe",
       "bytes": 458752,
       "sha256": "62e6e97fe086046159add26414c15162d38d42c68c41f2591b8c0408e177b4fb"
+    },
+    {
+      "name": "mscoree.dll",
+      "bytes": 1179648,
+      "sha256": "45ccd21afcdf641b370413cb40c57fc88b2888652219eeb5cacbf79cf841e60e",
+      "sourcePath": "files/lib/wine/aarch64-windows/mscoree.dll"
     },
     {
       "name": "msvcp140_2.dll",
@@ -34,10 +52,22 @@
       "sha256": "6d0dc67c2c9ee5a5dc6a9f477a4f7c77a12caab8fb0741ca105f6c3770299d7a"
     },
     {
+      "name": "normaliz.dll",
+      "bytes": 131072,
+      "sha256": "28397f0759ddfc52cf40c975104161795be7af26d4b3f41a978a5879b2f3d4bc",
+      "sourcePath": "files/lib/wine/aarch64-windows/normaliz.dll"
+    },
+    {
       "name": "oleacc.dll",
       "sourcePath": "files/lib/wine/aarch64-windows/oleacc.dll",
       "bytes": 851968,
       "sha256": "65dc765d9f97bce7862d201d9cb22b8aacd8b7bb4ca20edfeea4b21b598da96e"
+    },
+    {
+      "name": "pdh.dll",
+      "bytes": 589824,
+      "sha256": "7312b4627a7dffa4461d53f8659390cad625d50c1ecb12b1ef9b4280d5421d6b",
+      "sourcePath": "files/lib/wine/aarch64-windows/pdh.dll"
     },
     {
       "name": "psapi.dll",
@@ -62,6 +92,18 @@
       "sourcePath": "files/lib/wine/aarch64-windows/wevtsvc.dll",
       "bytes": 589824,
       "sha256": "55d09c35282c7b2cbc570caf098c8b3a0f0633a14d8842bcb108ec4f8f694c99"
+    },
+    {
+      "name": "winhttp.dll",
+      "bytes": 1245184,
+      "sha256": "976c4c39a78ebe35afbccce1fcedf951134edd8d62b40802c7f59c2f2bae2d31",
+      "sourcePath": "files/lib/wine/aarch64-windows/winhttp.dll"
+    },
+    {
+      "name": "wldap32.dll",
+      "bytes": 1572864,
+      "sha256": "1e0569f8c7ed26042aee65b1ba217fa231241731921616adfd1196bcaee0a125",
+      "sourcePath": "files/lib/wine/aarch64-windows/wldap32.dll"
     },
     {
       "name": "wsock32.dll",

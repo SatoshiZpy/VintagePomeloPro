@@ -309,7 +309,7 @@ std::string ProbeGnuProton(const std::string& runtime, bool forkBackend, const s
     // Keep the product exec/rtld allowlist intact. The experiment has a separate
     // code root, without modifying or duplicating the full Steam runtime.
     for (const char* name : {"ld-linux-aarch64.so.1", "libc.so.6", "libdl.so.2", "libpthread.so.0",
-            "librt.so.1", "libm.so.6", "libstdc++.so.6", "libgcc_s.so.1", "libsteamohos_posix.so",
+            "librt.so.1", "libm.so.6", "libresolv.so.2", "libstdc++.so.6", "libgcc_s.so.1", "libsteamohos_posix.so",
             "libfreetype.so.6", "libfontconfig.so.1", "libexpat.so.1", "libpng16.so.16", "libbrotlidec.so.1", "libbrotlicommon.so.1", "libz.so.1"}) {
         // The Cloud adapter belongs to Steam. Games use their existing
         // immutable dependency closure and registry-selected modern folders.
@@ -555,7 +555,9 @@ std::string ProbeGnuProton(const std::string& runtime, bool forkBackend, const s
         if (gameRequested || initializeRequested) {
             for (const char* name : {"psapi.dll", "wevtsvc.dll", "lsass.exe", "wsock32.dll", "mswsock.dll",
                                      "dwmapi.dll", "dwrite.dll", "uiautomationcore.dll", "oleacc.dll",
-                                     "msvcp140_2.dll", "vcruntime140_1.dll"})
+                                     "msvcp140_2.dll", "vcruntime140_1.dll",
+                                     "dxva2.dll", "jsproxy.dll", "mscoree.dll", "normaliz.dll",
+                                     "pdh.dll", "winhttp.dll", "wldap32.dll"})
                 if (!LoaderReference(root + "/bootstrap/" + name,
                     root + "/prefix/drive_c/windows/system32/" + name))
                     return failure("proton_bootstrap_module_missing_or_changed", true);

@@ -18,6 +18,13 @@
 !entry/src/main/resources/rawfile/linux-proton/bootstrap/oleacc.dll
 !entry/src/main/resources/rawfile/linux-proton/bootstrap/msvcp140_2.dll
 !entry/src/main/resources/rawfile/linux-proton/bootstrap/vcruntime140_1.dll
+!entry/src/main/resources/rawfile/linux-proton/bootstrap/dxva2.dll
+!entry/src/main/resources/rawfile/linux-proton/bootstrap/jsproxy.dll
+!entry/src/main/resources/rawfile/linux-proton/bootstrap/mscoree.dll
+!entry/src/main/resources/rawfile/linux-proton/bootstrap/normaliz.dll
+!entry/src/main/resources/rawfile/linux-proton/bootstrap/pdh.dll
+!entry/src/main/resources/rawfile/linux-proton/bootstrap/winhttp.dll
+!entry/src/main/resources/rawfile/linux-proton/bootstrap/wldap32.dll
 .deps/
 .libs/
 

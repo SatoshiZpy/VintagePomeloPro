@@ -17,7 +17,8 @@ available.update(r['name'] for r in manifest['files'])
 assert {r['name'] for r in manifest['files']} == {
     'psapi.dll','wevtsvc.dll','lsass.exe','wsock32.dll','mswsock.dll',
     'dwmapi.dll','dwrite.dll','uiautomationcore.dll','oleacc.dll',
-    'msvcp140_2.dll','vcruntime140_1.dll'}
+    'msvcp140_2.dll','vcruntime140_1.dll',
+    'dxva2.dll', 'jsproxy.dll', 'mscoree.dll', 'normaliz.dll', 'pdh.dll', 'winhttp.dll', 'wldap32.dll'}
 for row in manifest['files']:
     data = (raw/'bootstrap'/row['name']).read_bytes()
     assert len(data) == row['bytes'] and hashlib.sha256(data).hexdigest() == row['sha256']
