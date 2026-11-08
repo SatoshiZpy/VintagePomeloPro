@@ -30,6 +30,7 @@ DESTINATIONS = {
     'linux-steam/hmosdeck-gnu-arm64-v1.zip': 'linux-steam/deployment.json',
     'linux-proton/gnu-proton.zip': 'linux-proton/manifest.json',
 }
+PROTON_X64_MANIFEST = 'entry/src/main/resources/rawfile/linux-proton/graphics-x64/manifest.json'
 HAP_COMPANIONS = {
     'entry/src/main/resources/rawfile/linux-steam/bootstrap/posix-manifest.json': 'libsteamohos_posix_hap.so',
     'entry/src/main/resources/rawfile/linux-steam/bootstrap/fex-manifest.json': 'steamohos_fex',
@@ -95,6 +96,10 @@ def verify_sources(root, lock):
     verified={}
     if lock.get('nativeRepairs'):
         verified['entry/src/main/resources/rawfile/'+lock['nativeRepairs']]=verify_repairs(root)['sources']
+    if PROTON_X64_MANIFEST in set(overrides.values()) | set(lock.get('hapCompanions', [])):
+        from verify_proton_x64_graphics import verify as verify_graphics
+        try: verified[PROTON_X64_MANIFEST] = verify_graphics(root)
+        except AssertionError as error: raise ValueError(str(error)) from error
     for manifest_name in (set(overrides.values()) | set(lock.get('hapCompanions', []))) - set(verified):
         safe_path(manifest_name)
         if manifest_name not in HAP_COMPANIONS:
@@ -238,6 +243,11 @@ def verify_hap(path, root=ROOT):
         native_vulkan_driver.verify(root, archive)
         repair_manifest='entry/src/main/resources/rawfile/'+lock.get('nativeRepairs','')
         for manifest_name in (set(lock.get('hapCompanions', [])) | set(lock.get('hapSourceOverrides', {}).values())) - {repair_manifest}:
+            if manifest_name == PROTON_X64_MANIFEST:
+                from verify_proton_x64_graphics import verify as verify_graphics
+                try: verify_graphics(root, archive)
+                except AssertionError as error: raise ValueError(str(error)) from error
+                continue
             local = root / manifest_name
             manifest = json.loads(local.read_text())
             relative = local.relative_to(root / 'entry/src/main/resources/rawfile').as_posix()

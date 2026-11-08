@@ -556,6 +556,10 @@ assemble: $(foreach a,$(ARCHES),$(STAMPS)/$(a)/assemble)
 # Native GNU dependencies are generated binary inputs, not Git-tracked HAP
 # resources. Restore their pinned distribution on a clean arm64 checkout.
 .PHONY: linux-runtime-components test-linux-runtime-components test-ci-release
+.PHONY: linux-posix-companion
+linux-posix-companion:
+	python3 $(SCRIPTS)/build_linux_steam_posix.py --rebuild
+
 linux-runtime-components:
 	python3 $(SCRIPTS)/prepare_linux_runtime_components.py
 	python3 $(SCRIPTS)/build_steam_client_session.py

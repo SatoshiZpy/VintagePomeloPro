@@ -1,4 +1,5 @@
 import testNapi from 'libentry.so';
+import { HostWindowTasks } from '../service/HostWindowTasks';
 import { common } from '@kit.AbilityKit';
 import { GlobalSettings } from '../model/AppModels';
 import { PerformanceHudSettings, hasPerformanceHudContent, normalizePerformanceHud } from '../model/PerformanceHudSettings';
@@ -45,7 +46,11 @@ export struct FpsHud {
     this.performanceListener = (reading: PerformanceReading, foreground: boolean): void => {
       if (!foreground) { this.text = ''; return; }
       const lines: string[] = [];
-      if (this.metrics.fps) lines.push(this.readFps() + ' FPS');
+      if (this.metrics.fps) lines.push('呈现 ' + this.readFps() + ' FPS');
+      if (this.metrics.resolution) {
+        const id: number = this.toplevelId > 0 ? this.toplevelId : testNapi.getDesktopRootId() as number;
+        lines.push('窗口 ' + HostWindowTasks.getInstance().getContentResolution(id));
+      }
       if (this.metrics.appCpu && reading.appCpu !== '不可用') lines.push('应用CPU ' + this.shortValue(reading.appCpu));
       if (this.metrics.systemCpu && reading.systemCpu !== '不可用') lines.push('系统CPU ' + this.shortValue(reading.systemCpu));
       if (this.metrics.batteryTemperature && reading.batteryTemperature !== '不可用') {

@@ -2481,6 +2481,11 @@ struct SystemSettingsPage {
               onChange: (value: boolean): void => this.updatePerformanceHud('fps', value), id: 'performance-fps'
             })
             this.SwitchRow({
+              title: '分辨率', description: 'Wine 窗口内容尺寸，未乘宿主缩放；不代表游戏内部动态渲染分辨率',
+              enabled: this.settings.performanceHud.resolution,
+              onChange: (value: boolean): void => this.updatePerformanceHud('resolution', value), id: 'performance-resolution'
+            })
+            this.SwitchRow({
               title: '应用 CPU', description: '累计 Wine 子进程；100%＝一个逻辑核，200%≈两个核的负载。≥ 表示计数不完整时的下限',
               enabled: this.settings.performanceHud.appCpu,
               onChange: (value: boolean): void => this.updatePerformanceHud('appCpu', value), id: 'performance-app-cpu'
@@ -2505,7 +2510,7 @@ struct SystemSettingsPage {
             Text('未选择任何指标，监控层将隐藏且不采样。').fontSize(12)
               .fontColor(skinColor('text_secondary')).width('100%')
           }
-          Text('FPS 每 0.5 秒刷新，其余指标每 2 秒采样；进入后台时暂停。尚未取得数值时显示省略号，读取失败的指标自动隐藏。GPU 占用率和芯片温度暂不提供开关。')
+          Text('FPS 和分辨率每 0.5 秒刷新，其余指标每 2 秒采样；进入后台时暂停。尚未取得数值时显示省略号，读取失败的指标自动隐藏。GPU 占用率和芯片温度暂不提供开关。')
             .fontSize(11).fontColor(skinColor('text_secondary')).width('100%')
         }
         .width('100%').padding(this.cardPadding())
@@ -2595,11 +2600,11 @@ struct SystemSettingsPage {
             .onClick((): void => {
               try {
                 const clip = pasteboard.createData(pasteboard.MIMETYPE_TEXT_PLAIN,
-                  'https://github.com/yifengling0/VintagePomeloPro');
+                  'https://github.com/SatoshiZpy/VintagePomeloPro');
                 pasteboard.getSystemPasteboard().setData(clip);
                 promptAction.showToast({ message: '已复制开源地址到剪贴板' });
               } catch (_) {
-                promptAction.showToast({ message: 'https://github.com/yifengling0/VintagePomeloPro' });
+                promptAction.showToast({ message: 'https://github.com/SatoshiZpy/VintagePomeloPro' });
               }
             })
         }

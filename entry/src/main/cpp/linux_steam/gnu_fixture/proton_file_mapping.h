@@ -38,17 +38,29 @@ static int proton_private_read_fallback(int fd, int flags, const char *path, con
         unsigned machine = pe[4] | ((unsigned)pe[5] << 8);
         return machine == 0xaa64 || machine == 0x8664 || machine == 0xa641 || machine == 0x014c;
     }
-    if (!game || strstr(game, "/../") || strstr(game, "/./")) return 0;
-    const char *logical = "/storage/Users/currentUser/Download/com.vintage.pomelopro/SteamLinuxARM64/library/steamapps/common/";
-    const char *physical = "/storage/media/100/local/files/Docs/Download/com.vintage.pomelopro/SteamLinuxARM64/library/steamapps/common/";
-    const char *relative;
-    if (!strncmp(game, logical, strlen(logical))) relative = game + strlen(logical);
-    else if (!strncmp(game, physical, strlen(physical))) relative = game + strlen(physical);
-    else return 0;
+    if (!game || strstr(game, "/../") || strstr(game, "/./") ||
+        strstr(path, "/../") || strstr(path, "/./")) return 0;
+    /* Logical and physical aliases are paired by library. A game selected in
+     * the private library must not enable another copy in Download, or vice versa. */
+    const char *libraries[] = {
+        "/storage/Users/currentUser/Download/com.vintage.pomelopro/SteamLinuxARM64/library/steamapps/common/",
+        "/storage/media/100/local/files/Docs/Download/com.vintage.pomelopro/SteamLinuxARM64/library/steamapps/common/",
+        "/data/storage/el2/base/files/.wine/drive_c/SteamLinuxARM64/library/steamapps/common/",
+        "/data/app/el2/100/base/com.vintage.pomelopro/files/.wine/drive_c/SteamLinuxARM64/library/steamapps/common/"
+    };
+    const char *relative = NULL;
+    unsigned selected = 0;
+    for (; selected < 4; ++selected) {
+        const size_t prefix = strlen(libraries[selected]);
+        if (!strncmp(game, libraries[selected], prefix)) {
+            relative = game + prefix;
+            break;
+        }
+    }
+    if (!relative || !*relative || !strcmp(relative, ".") || !strcmp(relative, "..") || strchr(relative, '/')) return 0;
     /* One selected library directory, without game-name-specific exceptions. */
-    if (!*relative || !strcmp(relative, ".") || !strcmp(relative, "..") || strchr(relative, '/')) return 0;
-    for (unsigned alias = 0; alias < 2; ++alias) {
-        const char *root = alias ? physical : logical;
+    for (unsigned alias = (selected / 2) * 2; alias < (selected / 2) * 2 + 2; ++alias) {
+        const char *root = libraries[alias];
         const size_t prefix = strlen(root), length = strlen(relative);
         if (!strncmp(path, root, prefix) && !strncmp(path + prefix, relative, length) &&
             path[prefix + length] == '/') return 1;

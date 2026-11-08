@@ -29,8 +29,9 @@ for name in ['native_loader.cpp','native_loader_entry.S','native_loader.h']:
     assert manifest['sources'][str(source.relative_to(root))]==hashlib.sha256(source.read_bytes()).hexdigest()
 
 original = (fixture/'exec_compat.cpp').read_text()
-assert original.count('code+"/libsteamohos_posix.so"') == 1
-variant = original.replace('code+"/libsteamohos_posix.so"','code+"/libproton_probe.so"')
+posix_path = 'code+(!access((code+"/libsteamohos_posix_hap.so").c_str(),R_OK)?"/libsteamohos_posix_hap.so":"/libsteamohos_posix.so")'
+assert original.count(posix_path) == 1
+variant = original.replace(posix_path, 'code+(getenv("STEAMOHOS_PROTON_X64_GRAPHICS")?"/graphics-x64/libproton_probe.so":"/libproton_probe.so")')
 variant = '#include <poll.h>\n' + variant
 # Wine starts explorer/services with exec. Their ELF dependency search must
 # retain the private Proton closure, just like the first Wine process.
@@ -63,7 +64,8 @@ variant = variant.replace(needle, r'''
         if(child<0){int error=errno;close(errors[0]);close(errors[1]);return error;}
         if(!child){
             close(errors[0]);Handoff(path,argv,env);int error=errno;
-            (void)write(errors[1],&error,sizeof(error));_exit(127);
+            ssize_t sent;do{sent=write(errors[1],&error,sizeof(error));}while(sent<0&&errno==EINTR);
+            _exit(sent==sizeof(error)?127:126);
         }
         close(errors[1]);
         pollfd event{errors[0],POLLIN,0};
@@ -130,11 +132,12 @@ variant = variant.replace('    const char* software=getenv("STEAMOHOS_SOFTWARE_G
     for (const char* key : {"STEAMOHOS_PROTON_GAME_ROOT", "STEAMOHOS_PROTON_GAME_DRIVE",
             "STEAMOHOS_PROTON_DRIVE_ROOT", "STEAMOHOS_PROTON_NATIVE_EGL",
             "STEAMOHOS_PROTON_NATIVE_VULKAN", "STEAMOHOS_PROTON_VULKAN_MAP32",
+            "STEAMOHOS_PROTON_X64_GRAPHICS", "VN_OHOS_NATIVE_MEMORY", "WINEHUA_DXVK_RELAXED_FEATURES",
             "WINEHUA_VTEST_PRESENT", "LIBGL_DRIVERS_PATH", "VN_DEBUG", "VN_PERF",
             "VN_WINEHUA_STRONG_RING_BARRIER", "VN_WINEHUA_REMOTE_MEMORY_SYNC",
             "VN_WINEHUA_PERSISTENT_MAP_SYNC", "VN_WINEHUA_DIRECT_FENCE_WAIT",
             "STEAMOHOS_PROTON_LOCALE", "LANG", "LC_ALL", "LC_CTYPE", "LC_MESSAGES", "LOCPATH", "FONTCONFIG_FILE", "FONTCONFIG_PATH",
-            "WINEPATH", "WINEDLLOVERRIDES", "WINE_USE_EGL", "WINE_DISABLE_FULLSCREEN_HACK", "WINE_LARGE_ADDRESS_AWARE",
+            "WINEDLLPATH", "WINEPATH", "WINEDLLOVERRIDES", "WINE_USE_EGL", "WINE_DISABLE_FULLSCREEN_HACK", "WINE_LARGE_ADDRESS_AWARE",
             "WINE_D3D_CONFIG", "FEX_X87REDUCEDPRECISION", "DXVK_LOG_PATH", "DXVK_LOG_LEVEL"}) {
         const char* value=getenv(key); if(value) Set(environment,key,value);
     }
@@ -147,20 +150,31 @@ variant = variant.replace('    const char* software=getenv("STEAMOHOS_SOFTWARE_G
     }
 ''' + '    const char* software=getenv("STEAMOHOS_SOFTWARE_GL");', 1)
 (task/'exec_probe.cpp').write_text(variant)
-assembly = (fixture/'syscall_compat.S').read_text()
-assert assembly.count('    cmp x0, #__NR_openat2') == 1
-# On this sandbox optional userfaultfd and futex_waitv probes kill the caller.
-# Return the ordinary unsupported-feature error, allowing Wine's real fallback.
-# 374 is what this GE ARM64 binary actually issues (confirmed by disassembly);
-# 282 is the standard AArch64 userfaultfd number. No syscall is made here.
-assembly = assembly.replace('    cmp x0, #__NR_openat2',
-    '    cmp x0, #374\n    b.eq 2f\n    cmp x0, #282\n    b.eq 2f\n    cmp x0, #449\n    b.eq 2f\n    cmp x0, #__NR_openat2',1)
+def proton_syscall_variant(source):
+    # Intercept before the native-FEX optional-call dispatcher. In a GNU Wine
+    # process that dispatcher forwards to libc, which OHOS traps with SIGSYS.
+    # Returning ENOSYS here preserves Wine's own unsupported-feature fallback.
+    entry = '#if defined(__aarch64__)\nsyscall:\n'
+    assert source.count(entry) == 1
+    fallback = ''.join('    cmp x0, #' + str(number) +
+                       '\n    b.eq SteamOhosSyscallUnavailable\n'
+                       for number in (374, 282, 449))
+    return source.replace(entry, entry + fallback, 1)
+
+assembly = proton_syscall_variant((fixture/'syscall_compat.S').read_text())
 (task/'syscall_probe.S').write_text(assembly)
 filesystem = (fixture/'filesystem_compat.c').read_text()
 filesystem = 'static int CloudLink(const char*,const char*);\n' + filesystem
 linkpath = 'static int CloudLinkPath(const char *path,char link[PATH_MAX],char target[PATH_MAX],const char **suffix) {'
 assert filesystem.count(linkpath) == 1
 filesystem = filesystem.replace(linkpath, linkpath + r'''
+    const char *x64Graphics=getenv("STEAMOHOS_PROTON_X64_GRAPHICS");
+    const char *vdrive="/data/storage/el2/base/files/steamohos-native/proton-probe/prefix/dosdevices/v:";
+    if(path && x64Graphics && !strcmp(x64Graphics,"1") && Below(path,vdrive)) {
+        strcpy(link,vdrive);
+        strcpy(target,"/data/storage/el2/base/files/steamohos-native/proton-probe/graphics-x64");
+        *suffix=path+strlen(vdrive);return 3;
+    }
     const char *game=getenv("STEAMOHOS_PROTON_GAME_ROOT");
     const char *selected=getenv("STEAMOHOS_PROTON_GAME_DRIVE");
     const char *driveRoot=getenv("STEAMOHOS_PROTON_DRIVE_ROOT");
@@ -212,10 +226,13 @@ static void ProtonTraceResource(const char *path,int value,int error) {
     fprintf(stderr,"HMOSDECK_RESOURCE_OPEN pid=%d fd=%d errno=%d path=%.1000s\n",getpid(),value,value<0?error:0,path);
 }
 ''' + 'static void TraceProcAccess(const char *operation,const char *path,int failed,int error) {', 1)
-filesystem = filesystem.replace('        TraceProcAccess(#name,path,value<0,saved); errno=saved; return value;',
-    '        ProtonTraceResource(path,value,saved); TraceProcAccess(#name,path,value<0,saved); errno=saved; return value;', 1)
+resource_trace = 'TraceNativeFile(#name,path,value,saved);TraceProcAccess(#name,path,value<0,saved);'
+assert filesystem.count(resource_trace) == 1
+filesystem = filesystem.replace(resource_trace, 'ProtonTraceResource(path,value,saved);' + resource_trace, 1)
 (task/'filesystem_probe.c').write_text(filesystem)
 posix = (fixture/'posix_compat.c').read_text()
+posix = posix.replace('#define _GNU_SOURCE 1', '#define _GNU_SOURCE 1\n' +
+                      (fixture/'proton_vulkan_addressing.h').read_text(), 1)
 posix = posix.replace('#define _GNU_SOURCE 1', '#define _GNU_SOURCE 1\n#include <sys/prctl.h>', 1)
 # OHOS executable-memory policy belongs to the calling thread. Wine's Steam
 # helper creates the game from another thread, and fork does not establish the
@@ -319,7 +336,8 @@ posix = posix.replace(signed_library, signed_library + r'''
             return mapped;
         }
         if(!strcmp(name,"libvulkan.so.1") && getenv("STEAMOHOS_PROTON_NATIVE_VULKAN")) {
-            if(snprintf(mapped,capacity,"%s/graphics/libproton_vulkan.so",probe)>=(int)capacity)return name;
+            const char* graphics=getenv("STEAMOHOS_PROTON_X64_GRAPHICS")?"graphics-x64":"graphics";
+            if(snprintf(mapped,capacity,"%s/%s/libproton_vulkan.so",probe,graphics)>=(int)capacity)return name;
             return mapped;
         }
         if(!strcmp(name,"libEGL.so.1") && getenv("STEAMOHOS_PROTON_NATIVE_EGL")) {
@@ -423,7 +441,7 @@ __attribute__((constructor)) static void ProtonDiagnostic(int argc, char **argv,
     }
     // The combined D3D fixture imports d3d9 even in its D3D11 mode.
     // Keep that unused import builtin; only d3d11/dxgi use the test DXVK DLLs.
-    if(getenv("STEAMOHOS_PROTON_NATIVE_VULKAN"))setenv("STEAMOHOS_PROTON_VULKAN_MAP32","1",1);
+    proton_configure_vulkan_addressing();
     if(!access("/data/storage/el2/base/files/steamohos-native/proton-probe/font-debug",R_OK))
         setenv("WINEDEBUG","-all,err+all,trace+font,trace+text",1);
     int gpu=open("/data/storage/el2/base/files/steamohos-native/proton-probe/gpu-debug",O_RDONLY|O_CLOEXEC|O_NOFOLLOW);

@@ -1,5 +1,6 @@
 #include "proton_probe.h"
 #include "proton_game_paths.h"
+#include "proton_graphics/pe_image.h"
 #include "proton_setup_cache.h"
 #include "proton_user_paths.h"
 #include "native_exec.h"
@@ -254,10 +255,10 @@ std::string ProbeGnuProton(const std::string& runtime, bool forkBackend, const s
     const GameTrial* selectedGame = nullptr;
     for (const auto& game : games) if (stage == game.stage) selectedGame = &game;
     const bool gameRequested = selectedGame != nullptr || manual;
-    const bool vulkanRequested = stage == "dxvk11-x86" ||
+    const bool vulkanRequested = stage == "dxvk11-x86" || stage == "dxvk11-x64" ||
         (manual ? manual->backend=="gnu-proton" : gameRequested && access((std::string(Root) + "/game-dxvk").c_str(), R_OK) == 0);
     const bool localeRequested = stage == "locale" || stage == "locale-configure";
-    const bool d3dRequested = stage == "d3d9-x86" || stage == "dxvk11-x86";
+    const bool d3dRequested = stage == "d3d9-x86" || stage == "dxvk11-x86" || stage == "dxvk11-x64";
     const bool x86Requested = stage == "x86" || d3dRequested || gameRequested || localeRequested;
     const bool initializeRequested = stage == "init";
     const bool graphicsRequested = stage == "glx";
@@ -270,7 +271,7 @@ std::string ProbeGnuProton(const std::string& runtime, bool forkBackend, const s
     const bool inputActionsRequested = stage == "input-actions";
     const bool inputRequested = stage == "input" || inputActionsRequested || gameRequested;
     const bool mediaRequested = graphicsRequested || sharedGraphicsRequested || vulkanRequested || audioRequested || inputRequested || localeRequested;
-    const bool x64Requested = stage == "x64" || windowRequested || (mediaRequested && !x86Requested);
+    const bool x64Requested = stage == "x64" || stage == "dxvk11-x64" || windowRequested || (mediaRequested && !x86Requested);
     const auto failure = [&](const char* status, bool bootstrap = false) {
         return "{\"schemaVersion\":1,\"status\":" + JsonString(status) +
             ",\"bootstrapVerified\":" + (bootstrap ? "true" : "false") +
@@ -284,6 +285,16 @@ std::string ProbeGnuProton(const std::string& runtime, bool forkBackend, const s
         !prefixRequested && !x64Requested && !x86Requested && !initializeRequested)
         return failure("proton_unsupported_stage");
     const std::string root(Root), package = root + "/package";
+    if(manual&&manual->argv.empty())return failure("proton_graphics_executable_missing");
+    const std::string gameImage=manual?manual->argv.front():selectedGame?
+        std::string("/storage/Users/currentUser/Download/com.vintage.pomelopro/SteamLinuxARM64/library/steamapps/common/")+
+            selectedGame->directory+"/"+selectedGame->executable:root+"/prefix/drive_c/proton-x64-d3d11.exe";
+    const uint16_t imageMachine=(gameRequested||stage=="dxvk11-x64")?ProtonPeMachine(gameImage):0;
+    if(vulkanRequested&&(gameRequested||stage=="dxvk11-x64")&&!imageMachine)
+        return failure("proton_graphics_executable_architecture_invalid");
+    if(stage=="dxvk11-x64"&&imageMachine!=0x8664)return failure("proton_x64_fixture_architecture_invalid");
+    const bool x64Graphics=vulkanRequested&&imageMachine==0x8664;
+
     const std::string wine = package + "/files/lib/wine/aarch64-unix/wine";
     const std::string server = package + "/files/bin-arm64/wineserver";
     if (!NativeElf(wine) || !NativeElf(server))
@@ -298,7 +309,7 @@ std::string ProbeGnuProton(const std::string& runtime, bool forkBackend, const s
     // Keep the product exec/rtld allowlist intact. The experiment has a separate
     // code root, without modifying or duplicating the full Steam runtime.
     for (const char* name : {"ld-linux-aarch64.so.1", "libc.so.6", "libdl.so.2", "libpthread.so.0",
-            "librt.so.1", "libm.so.6", "libstdc++.so.6", "libgcc_s.so.1", "libsteamohos_posix.so",
+            "librt.so.1", "libm.so.6", "libresolv.so.2", "libstdc++.so.6", "libgcc_s.so.1", "libsteamohos_posix.so",
             "libfreetype.so.6", "libfontconfig.so.1", "libexpat.so.1", "libpng16.so.16", "libbrotlidec.so.1", "libbrotlicommon.so.1", "libz.so.1"}) {
         // The Cloud adapter belongs to Steam. Games use their existing
         // immutable dependency closure and registry-selected modern folders.
@@ -415,6 +426,10 @@ std::string ProbeGnuProton(const std::string& runtime, bool forkBackend, const s
         environment.emplace_back("STEAMOHOS_SYSVIPC_ROOT="+scope);
         steamCompatRoot = external + "/client/.steam/steam/steamohos/compat";
         environment.emplace_back("STEAMOHOS_STEAM_ROOT="+external+"/client/.steam/steam");
+        // Use the same packaged Mozilla roots as the GNU Steam client. The
+        // filesystem adapter maps Wine's distribution CA paths to this bundle;
+        // without it Schannel can handshake but cannot trust the server chain.
+        environment.emplace_back("SSL_CERT_FILE="+external+"/client/.steam/steam/steamohos/ca-certificates.crt");
         environment.emplace_back("STEAMOHOS_LIBRARY_ROOT="+external+"/library");
         environment.emplace_back("STEAM_COMPAT_CLIENT_INSTALL_PATH="+external+"/client/.steam/steam");
         environment.emplace_back("STEAM_COMPAT_LIBRARY_PATHS="+external+"/library");
@@ -543,7 +558,10 @@ std::string ProbeGnuProton(const std::string& runtime, bool forkBackend, const s
         // games and Steam's 64-bit prerequisite helpers, not a per-game fix.
         if (gameRequested || initializeRequested) {
             for (const char* name : {"psapi.dll", "wevtsvc.dll", "lsass.exe", "wsock32.dll", "mswsock.dll",
-                                     "dwmapi.dll", "dwrite.dll", "uiautomationcore.dll", "oleacc.dll"})
+                                     "dwmapi.dll", "dwrite.dll", "uiautomationcore.dll", "oleacc.dll",
+                                     "xinput9_1_0.dll", "msvcp140_1.dll", "msvcp140_2.dll", "vcruntime140_1.dll",
+                                     "dxva2.dll", "jsproxy.dll", "mscoree.dll", "normaliz.dll",
+                                     "pdh.dll", "winhttp.dll", "wldap32.dll", "schannel.dll", "rsaenh.dll", "credui.dll", "esent.dll", "ncrypt.dll", "usp10.dll", "wtsapi32.dll", "powrprof.dll", "dbgeng.dll"})
                 if (!LoaderReference(root + "/bootstrap/" + name,
                     root + "/prefix/drive_c/windows/system32/" + name))
                     return failure("proton_bootstrap_module_missing_or_changed", true);
@@ -553,7 +571,7 @@ std::string ProbeGnuProton(const std::string& runtime, bool forkBackend, const s
             if (!ReferenceMediaRuntime(root, runtime))
                 return failure(("proton_media_reference_failed:"+MediaReferenceFailure).c_str(), true);
             if ((graphicsRequested && !NativeElf(root + "/Xwayland")) ||
-                (!gameRequested && !localeRequested && access((root+(d3dRequested ? "/prefix/drive_c/proton-x86-cube.exe" : "/prefix/drive_c/proton-x64-media.exe")).c_str(),R_OK)))
+                (!gameRequested && !localeRequested && stage!="dxvk11-x64" && access((root+(d3dRequested ? "/prefix/drive_c/proton-x86-cube.exe" : "/prefix/drive_c/proton-x64-media.exe")).c_str(),R_OK)))
                 return failure("proton_media_fixture_missing", true);
         }
         if (sharedGraphicsRequested) {
@@ -568,6 +586,28 @@ std::string ProbeGnuProton(const std::string& runtime, bool forkBackend, const s
             environment.emplace_back("WINEHUA_VTEST_PRESENT=1");
             environment.emplace_back("STEAMOHOS_PROTON_NATIVE_EGL=1");
         }
+        if (x64Graphics) {
+            const std::string profile=root+"/graphics-x64";
+            // The separately hash-verified DXVK rebuild lives in the managed
+            // graphics profile. V: avoids overwriting an older prefix DLL.
+            if (!CDriveRecord(root, 'v', profile, true))
+                return failure("proton_x64_graphics_drive_failed",true);
+            for(const char* name:{"d3d11.dll","dxgi.dll"})
+                if(access((profile+"/dxvk/"+name).c_str(),R_OK))
+                    return failure("proton_x64_dxvk_missing",true);
+            for(const char* name:{"winevulkan.dll","vulkan-1.dll","d3dcompiler_47.dll"})
+                if(!LoaderReference(profile+"/wine/aarch64-windows/"+name,root+"/prefix/drive_c/windows/system32/"+name))
+                    return failure("proton_x64_wine_module_missing_or_changed",true);
+            for(const char* name:{"libproton_probe.so","libproton_vulkan.so","libvulkan_virtio.so"})
+                if(!NativeElf(profile+'/'+name))return failure("proton_x64_graphics_profile_missing",true);
+            for(auto& value:environment) {
+                if(value.compare(0,11,"LD_PRELOAD=")==0)value="LD_PRELOAD="+profile+"/libproton_probe.so";
+                if(value.compare(0,12,"WINEDLLPATH=")==0)value="WINEDLLPATH="+profile+"/wine:"+root+"/media/files/lib/wine:"+package+"/files/lib/wine";
+            }
+            environment.emplace_back("STEAMOHOS_PROTON_X64_GRAPHICS=1");
+            environment.emplace_back("VN_OHOS_NATIVE_MEMORY=1");
+            environment.emplace_back("WINEHUA_DXVK_RELAXED_FEATURES=1");
+        }
         if (vulkanRequested) {
             if (!SafeEndpoint(capabilities.vtestSocket) || !NativeElf(root+"/graphics/libproton_vulkan.so"))
                 return failure("proton_vulkan_dependencies_missing",true);
@@ -579,7 +619,7 @@ std::string ProbeGnuProton(const std::string& runtime, bool forkBackend, const s
                 environment.emplace_back(std::string(name)+"=1");
             environment.emplace_back("STEAMOHOS_PROTON_NATIVE_VULKAN=1");
             if (gameRequested) {
-                environment.emplace_back("WINEPATH=C:\\dxvk26");
+                environment.emplace_back(x64Graphics?"WINEPATH=V:\\dxvk":"WINEPATH=C:\\dxvk26");
             }
             environment.emplace_back("DXVK_LOG_PATH="+root+"/tmp");
             environment.emplace_back("DXVK_LOG_LEVEL=info");
@@ -647,7 +687,8 @@ std::string ProbeGnuProton(const std::string& runtime, bool forkBackend, const s
         if (probeShim) {
             for (auto& variable : prefixEnvironment)
                 if (variable.compare(0, 11, "LD_PRELOAD=") == 0)
-                    variable = "LD_PRELOAD=" + root + "/libproton_probe.so";
+                    variable = "LD_PRELOAD=" + root + (x64Graphics ?
+                        "/graphics-x64/libproton_probe.so" : "/libproton_probe.so");
         }
         // Register helpers can start the private wineserver too. Reap it on
         // every subsequent exit, including failed registration/setup paths.
@@ -663,6 +704,32 @@ std::string ProbeGnuProton(const std::string& runtime, bool forkBackend, const s
         // their main operation only edits registry data. Disabling both display
         // drivers here leaves that bootstrap without a usable driver.
         const auto& provisioningEnvironment = prefixEnvironment;
+        // The selectively delivered prefix may predate RSA CSP installation.
+        // Register the pinned module through its own entry point; copying the
+        // DLL alone does not create Cryptography\\Defaults provider entries.
+        if (gameRequested || x64Graphics) {
+            struct stat provider{};
+            if (stat((root + "/bootstrap/rsaenh.dll").c_str(), &provider))
+                return failure("proton_tls_provider_missing", true);
+            const std::string providerState = "rsa-provider-v1\n" +
+                std::to_string(provider.st_size) + ":" + std::to_string(provider.st_mtime) + "\n";
+            NativeExecResult registration;
+            const auto registered = EnsureProtonSetup(root + "/prefix/hmosdeck-tls-provider.state",
+                root + "/prefix/system.reg", providerState, [&]() {
+                    registration = RunNativeLoader({loader, "--inhibit-cache", "--library-path", libraries,
+                        wine, "C:\\windows\\system32\\regsvr32.exe", "/s", "rsaenh.dll"},
+                        provisioningEnvironment, 120000, options);
+                    return Succeeded(registration);
+                });
+            trace.Mark("tlsProvider", registered == ProtonSetupResult::Reused);
+            if (registered == ProtonSetupResult::Failed)
+                return "{\"schemaVersion\":1,\"status\":\"proton_tls_provider_registration_failed\",\"runtimeBackend\":\"gnu-proton\",\"tlsProviderSetup\":" +
+                    NativeExecJson(registration) + "}";
+            if (registered == ProtonSetupResult::StateWriteFailed)
+                return failure("proton_tls_provider_state_write_failed", true);
+            if (unlink((root + "/desktop-probe.once").c_str()) && errno != ENOENT)
+                return failure("proton_tls_desktop_slot_reset_failed", true);
+        }
         if (gameRequested) {
             // Run once per private prefix/configuration, before any game or
             // prerequisite helper. Use Windows registry APIs, never edit live
@@ -769,7 +836,7 @@ std::string ProbeGnuProton(const std::string& runtime, bool forkBackend, const s
         std::string gameCommand;
         if(manual) gameCommand=ProtonGameWindowsPath(manual->argv.front(), manual->role=="game" ? manual->install : std::string());
         else if(gameRequested)gameCommand=std::string(1,selectedGame->drive-'a'+'A')+":\\"+selectedGame->executable;
-        const std::string command = localeRequested ? "C:\\proton-x86-locale.exe" : initializeRequested ? "wineboot.exe" : gameRequested ? gameCommand : vulkanRequested ? "C:\\dxvk26\\proton-x86-cube.exe" : d3dRequested ? "C:\\proton-x86-cube.exe" : mediaRequested ? "C:\\proton-x64-media.exe" : x86Requested ? "C:\\proton-x86-cmd.exe" : windowRequested ? "C:\\proton-x64-window.exe" : x64Requested ? "C:\\proton-x64-cmd.exe" : "cmd.exe";
+        const std::string command = localeRequested ? "C:\\proton-x86-locale.exe" : initializeRequested ? "wineboot.exe" : gameRequested ? gameCommand : vulkanRequested ? (x64Graphics?"C:\\proton-x64-d3d11.exe":"C:\\dxvk26\\proton-x86-cube.exe") : d3dRequested ? "C:\\proton-x86-cube.exe" : mediaRequested ? "C:\\proton-x64-media.exe" : x86Requested ? "C:\\proton-x86-cmd.exe" : windowRequested ? "C:\\proton-x64-window.exe" : x64Requested ? "C:\\proton-x64-cmd.exe" : "cmd.exe";
         const std::string marker = x86Requested ? "HMOSDECK_GNU_X86_OK" : x64Requested ? "HMOSDECK_GNU_X64_OK" : "HMOSDECK_GNU_WINE_OK";
         if (x64Requested && !LoaderReference(package + "/files/lib/wine/x86_64-windows/cmd.exe",
                 root + "/prefix/drive_c/proton-x64-cmd.exe"))
@@ -779,7 +846,7 @@ std::string ProbeGnuProton(const std::string& runtime, bool forkBackend, const s
         std::vector<std::string> arguments = gameRequested ?
             std::vector<std::string>{loader,"--inhibit-cache","--library-path",libraries,wine,"C:\\windows\\system32\\steam.exe",command} : d3dRequested ?
             std::vector<std::string>{loader,"--inhibit-cache","--library-path",libraries,wine,command,
-                stage=="dxvk11-x86"?"--d3d11":"--d3d9","--automation","--seconds","12","--result","C:\\proton-d3d-result.json"} : localeRequested ?
+                vulkanRequested?"--d3d11":"--d3d9","--automation","--seconds","12","--result","C:\\proton-d3d-result.json"} : localeRequested ?
             std::vector<std::string>{loader,"--inhibit-cache","--library-path",libraries,wine,command} : initializeRequested ?
             std::vector<std::string>{loader, "--inhibit-cache", "--library-path", libraries, wine, command, "-u"} : mediaRequested ?
             std::vector<std::string>{loader, "--inhibit-cache", "--library-path", libraries, wine, command, sharedGraphicsRequested ? "gl-shared" : graphicsRequested ? "gl" : audioRequested ? "audio" : inputActionsRequested ? "input-actions" : "input"} : windowRequested ?
@@ -841,20 +908,21 @@ std::string ProbeGnuProton(const std::string& runtime, bool forkBackend, const s
         prefix.output.find("HMOSDECK_GNU_INPUT_ENUMERATED")!=std::string::npos;
     const bool inputActionsVerified=inputActionsRequested && Succeeded(prefix) &&
         prefix.output.find("HMOSDECK_GNU_INPUT_ACTIONS_OK")!=std::string::npos;
-    const bool x86Verified = x86Requested && Succeeded(prefix) &&
+    const bool x86Verified = x86Requested && !x64Graphics && Succeeded(prefix) &&
         (d3dRequested ? graphicsTransportSubmitted : prefix.output.find("HMOSDECK_GNU_X86_OK") != std::string::npos);
     const bool prefixVerified = prefixRequested && Succeeded(prefix) &&
         prefix.output.find("HMOSDECK_GNU_WINE_OK") != std::string::npos;
     const bool windowVerified = windowRequested && Succeeded(prefix) &&
         prefix.output.find("HMOSDECK_GNU_X64_WINDOW_OK") != std::string::npos;
-    const bool x64Verified = x64Requested && Succeeded(prefix) &&
+    const bool x64Verified = (x64Requested || x64Graphics) && Succeeded(prefix) &&
         (windowVerified || graphicsVerified || graphicsTransportSubmitted || audioVerified || inputEnumerated || prefix.output.find("HMOSDECK_GNU_X64_OK") != std::string::npos);
     return "{\"schemaVersion\":1,\"executionModel\":\"native_gnu_aarch64\","
         "\"distribution\":\"GE-Proton11-11-aarch64\",\"status\":" +
         JsonString(gameRequested ? (prefix.cancelled ? "proton_game_cancelled" : prefix.timedOut ? "proton_game_trial_expired" : Succeeded(prefix) ? "proton_game_exited" : "proton_game_failed") : vulkanRequested ? (graphicsTransportSubmitted ? "proton_vulkan_submitted" : "proton_vulkan_failed") : sharedGraphicsRequested ? (graphicsTransportSubmitted ? "proton_native_egl_submitted" : "proton_native_egl_failed") : initializeRequested ? (Succeeded(prefix) ? "proton_prefix_updated" : "proton_prefix_update_failed") : graphicsRequested ? (graphicsVerified ? "proton_gpu_verified" : "proton_gpu_failed") : audioRequested ? (audioVerified ? "proton_audio_verified" : "proton_audio_failed") : inputRequested ? (inputEnumerated ? "proton_input_enumerated" : "proton_input_failed") : x86Requested ? (x86Verified ? "proton_x86_verified" : "proton_x86_failed") : windowRequested ? (windowVerified ? "proton_window_verified" : "proton_window_failed") : x64Requested ? (x64Verified ? "proton_x64_verified" : "proton_x64_failed") :
             prefixRequested ? (prefixVerified ? "proton_prefix_verified" : "proton_prefix_failed") :
             (verified ? "proton_bootstrap_verified" : "proton_bootstrap_failed")) +
-        ",\"runtimeBackend\":\"gnu-proton\",\"graphicsBackend\":"+JsonString(vulkanRequested?(gameRequested?"d3d9-wined3d-virgl+d3d11-dxvk26-venus-nativeimage":"dxvk26-venus-nativeimage"):"wined3d-virgl-nativeimage")+
+        ",\"runtimeBackend\":\"gnu-proton\",\"graphicsBackend\":"+JsonString(vulkanRequested?(x64Graphics?"dxvk-legacy-x64-venus-native-memory":gameRequested?"d3d9-wined3d-virgl+d3d11-dxvk26-venus-nativeimage":"dxvk26-venus-nativeimage"):"wined3d-virgl-nativeimage")+
+        ",\"peMachine\":"+std::to_string(imageMachine)+
         ",\"launchSource\":"+JsonString(manual?"linux-steam":"standalone-probe")+
         ",\"appId\":"+JsonString(manual?manual->appId:selectedGame?selectedGame->appid:"")+
         ",\"bootstrapVerified\":" + (verified ? "true" : "false") +
@@ -865,7 +933,7 @@ std::string ProbeGnuProton(const std::string& runtime, bool forkBackend, const s
         ",\"x64Verified\":" + (x64Verified ? "true" : "false") +
         ",\"windowRequested\":" + (windowRequested ? "true" : "false") +
         ",\"windowVerified\":" + (windowVerified ? "true" : "false") +
-        ",\"x86Requested\":" + (x86Requested ? "true" : "false") +
+        ",\"x86Requested\":" + (x86Requested && !x64Graphics ? "true" : "false") +
         ",\"x86Verified\":" + (x86Verified ? "true" : "false") +
         ",\"prefix\":" + NativeExecJson(prefix) +
         ",\"graphicsVerified\":" + (graphicsVerified ? "true" : "false") +

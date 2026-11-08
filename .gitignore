@@ -16,6 +16,19 @@
 !entry/src/main/resources/rawfile/linux-proton/bootstrap/dwrite.dll
 !entry/src/main/resources/rawfile/linux-proton/bootstrap/uiautomationcore.dll
 !entry/src/main/resources/rawfile/linux-proton/bootstrap/oleacc.dll
+!entry/src/main/resources/rawfile/linux-proton/bootstrap/xinput9_1_0.dll
+!entry/src/main/resources/rawfile/linux-proton/bootstrap/msvcp140_1.dll
+!entry/src/main/resources/rawfile/linux-proton/bootstrap/msvcp140_2.dll
+!entry/src/main/resources/rawfile/linux-proton/bootstrap/vcruntime140_1.dll
+!entry/src/main/resources/rawfile/linux-proton/bootstrap/dxva2.dll
+!entry/src/main/resources/rawfile/linux-proton/bootstrap/jsproxy.dll
+!entry/src/main/resources/rawfile/linux-proton/bootstrap/mscoree.dll
+!entry/src/main/resources/rawfile/linux-proton/bootstrap/normaliz.dll
+!entry/src/main/resources/rawfile/linux-proton/bootstrap/pdh.dll
+!entry/src/main/resources/rawfile/linux-proton/bootstrap/winhttp.dll
+!entry/src/main/resources/rawfile/linux-proton/bootstrap/wldap32.dll
+!entry/src/main/resources/rawfile/linux-proton/bootstrap/schannel.dll
+!entry/src/main/resources/rawfile/linux-proton/bootstrap/rsaenh.dll
 .deps/
 .libs/
 
@@ -91,3 +104,17 @@ entry/src/main/resources/rawfile/linux-proton/gnu-proton.zip
 
 # Locked GNU media PE supplement, independent of historical Proton ZIPs.
 !entry/src/main/resources/rawfile/linux-proton/media/files/lib/wine/aarch64-windows/*.dll
+
+# Locked Wine graphics PE supplement, paired with the GNU x64 profile.
+!entry/src/main/resources/rawfile/linux-proton/graphics-x64/wine/*-windows/*.dll
+
+!entry/src/main/resources/rawfile/linux-proton/bootstrap/credui.dll
+!entry/src/main/resources/rawfile/linux-proton/bootstrap/esent.dll
+!entry/src/main/resources/rawfile/linux-proton/bootstrap/ncrypt.dll
+!entry/src/main/resources/rawfile/linux-proton/bootstrap/usp10.dll
+!entry/src/main/resources/rawfile/linux-proton/bootstrap/wtsapi32.dll
+
+!entry/src/main/resources/rawfile/linux-proton/bootstrap/powrprof.dll
+!entry/src/main/resources/rawfile/linux-proton/bootstrap/dbgeng.dll
+
+!entry/src/main/resources/rawfile/linux-proton/graphics-x64/dxvk/*.dll

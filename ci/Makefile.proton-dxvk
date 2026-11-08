@@ -1,0 +1,8 @@
+# Full Legacy ARM64X DXVK rebuild for the GNU x64 graphics profile.
+# Run inside the existing pinned Linux Docker container.
+ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST)))/..)
+OUT ?= /data/proton-dxvk-build
+LLVM_MINGW ?= /data/tools/llvm-mingw-20260826-ucrt-ubuntu-22.04-x86_64
+.PHONY: proton-dxvk
+proton-dxvk:
+	python3 $(ROOT)/scripts/build_proton_dxvk.py --build-dir $(OUT) --toolchain $(LLVM_MINGW)

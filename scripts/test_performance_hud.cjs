@@ -46,7 +46,7 @@ function load(file) {
   vm.runInNewContext(js, {
     exports, require: localRequire, console,
     Date: { now: () => clock },
-    AppStorage: { setOrCreate: () => {} },
+    AppStorage: { get: () => undefined, setOrCreate: () => {} },
     setInterval: (fn, ms) => { const id = ++serial; timers.set(id, { fn, ms }); return id; },
     clearInterval: id => timers.delete(id)
   }, { filename: file });
@@ -68,6 +68,7 @@ const tick = async () => { clock += 2000; for (const timer of [...timers.values(
 async function main() {
   const defaults = settings.normalizePerformanceHud();
   assert.equal(defaults.fps, true);
+  assert.equal(defaults.resolution, false);
   assert.equal(defaults.appCpu, false);
   assert.equal(settings.normalizePerformanceHud({ appCpu: 'true', fps: 0 }).appCpu, false);
   const selected = settings.setPerformanceHudField(defaults, 'appCpu', true);
@@ -133,6 +134,13 @@ async function main() {
   service.subscribe(context, listener, defaults);
   assert.equal(timers.size, 1); assert.equal(cpuCalls, 0); // FPS only never scans procfs.
   service.unsubscribe(listener); assert.equal(timers.size, 0); assert.equal(lifecycle, null);
+  const resolutionOnly = settings.setPerformanceHudField(empty, 'resolution', true);
+  assert.equal(settings.hasPerformanceHudContent(resolutionOnly), true);
+  assert.equal(settings.hasPerformanceTelemetry(resolutionOnly), false);
+  service.subscribe(context, listener, resolutionOnly);
+  assert.equal(timers.size, 1); assert.equal(cpuCalls, 0);
+  assert.equal([...timers.values()][0].ms, 500);
+  service.unsubscribe(listener);
   service.subscribe(context, listener, empty);
   assert.equal(timers.size, 0); assert.equal(cpuCalls, 0);
   service.unsubscribe(listener);

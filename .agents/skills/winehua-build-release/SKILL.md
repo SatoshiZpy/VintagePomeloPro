@@ -76,7 +76,7 @@ Read current values from source before every release. Keep these stable unless t
 | Target/compatible SDK | Makefile plus ignored root `build-profile.json5` | `6.1.0(23)` unless deliberately raised |
 | App library | `AppCatalogService.ets` and `EntryAbility.ets` | `Download/com.vintage.pomelopro/games` |
 | Private branch | local worktree | `private/wine-engine-app` |
-| Private destination | explicit URL | `https://github.com/yifengling0/VintagePomeloPro`, branch `main` |
+| Private destination | explicit URL | `https://github.com/SatoshiZpy/VintagePomeloPro`, branch `main` |
 
 Verify that cold start creates the fixed `games` directory without a directory picker. Verify that Wine maps `Z:` to `Download/com.vintage.pomelopro`, so `Z:\games` is the scanned application directory.
 
@@ -138,7 +138,7 @@ After a WSL or Docker Desktop reinstall, restore in this order before compiling.
 1. **Docker access**: enable WSL integration for the Ubuntu distro (`%APPDATA%\Docker\settings.json` -> `integratedWslDistros`, restart Docker Desktop), then verify `docker` works inside WSL and `docker image inspect winehua-dev` succeeds. Never rebuild the image.
 2. **Git credentials**: retrieve the cached GitHub token from the Windows credential manager (`git credential fill` for `github.com`, do not print it), write `~/.git-credentials` (chmod 600), enable `credential.helper store`, and set `http.lowSpeedLimit 1` / `http.lowSpeedTime 999`.
 3. **Proxy**: point git at the host proxy for github.com (`http.https://github.com/.proxy`). Private GitHub fetches require both proxy and credentials; without credentials the clone hangs or reports "Repository not found".
-4. **Clone**: `git clone https://github.com/yifengling0/VintagePomeloPro.git`, create local branch `private/wine-engine-app` from `main`, and confirm `AppScope/app.json5` bundle/version before building.
+4. **Clone**: `git clone https://github.com/SatoshiZpy/VintagePomeloPro.git`, create local branch `private/wine-engine-app` from `main`, and confirm `AppScope/app.json5` bundle/version before building.
 5. **Submodules**: the three `git@github.com:winehua/...` URLs fail in `git submodule update` because `insteadOf` URL rewriting is not inherited by the submodule clone process. Override them in local config first:
 
    ```bash
@@ -524,7 +524,7 @@ Publish with the explicit URL and no upstream:
 
 ```bash
 git -C "$REPO" push --porcelain \
-  https://github.com/yifengling0/VintagePomeloPro.git \
+  https://github.com/SatoshiZpy/VintagePomeloPro.git \
   private/wine-engine-app:refs/heads/main
 ```
 

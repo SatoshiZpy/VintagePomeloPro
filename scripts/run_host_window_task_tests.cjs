@@ -17,6 +17,17 @@ const drain = async () => { for (let n = 0; n < 12; ++n) await Promise.resolve()
 (async () => {
   // Exercise the production registry: dispatch confirmation cannot reveal
   // Steam; only a matching game's real toplevel completes the foreground handoff.
+  const size = new Registry();
+  event(size, 8, 'created', {w:1560,h:1040});
+  event(size, 9, 'created', {w:800,h:600});
+  event(size, 8, 'surface', {w:3120,h:2080}); // Host DPI cannot overwrite guest dimensions.
+  assert.equal(size.getContentResolution(8), '1560×1040');
+  event(size, 8, 'resize', {w:1280,h:720});
+  assert.equal(size.getContentResolution(8), '1280×720');
+  assert.equal(size.getContentResolution(9), '800×600');
+  event(size, 8, 'destroyed'); event(size, 8, 'created');
+  assert.equal(size.getContentResolution(8), '—'); // Recycled window IDs cannot retain old sizes.
+  size.reset(); assert.equal(size.getContentResolution(9), '—');
   const g = new Registry();
   const gameRaises = [];
   g.setActivator(async (task, current) => { gameRaises.push(task.toplevelId); return current(); });

@@ -11,7 +11,7 @@ first, then mutate only what is missing.
 wsl.exe -l -v
 & 'C:\Program Files\Docker\Docker\resources\bin\docker.exe' image ls
 Test-Path 'F:\command-line-tools\bin\hvigorw'
-git ls-remote https://github.com/yifengling0/VintagePomeloPro.git HEAD
+git ls-remote https://github.com/SatoshiZpy/VintagePomeloPro.git HEAD
 ```
 
 `winehua-dev` (do not rebuild), `F:\command-line-tools`, and the private repo on
@@ -75,7 +75,7 @@ Without credentials even `git ls-remote` hangs.
 
 ```bash
 cd ~/src
-git clone https://github.com/yifengling0/VintagePomeloPro.git VintagePomeloPro
+git clone https://github.com/SatoshiZpy/VintagePomeloPro.git VintagePomeloPro
 cd VintagePomeloPro
 git checkout -b private/wine-engine-app
 git fetch --unshallow   # optional; full history useful for signing docs/history

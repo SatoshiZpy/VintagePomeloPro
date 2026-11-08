@@ -45,7 +45,7 @@ ARM64 实现对象。快速回归覆盖此架构选择，构建脚本变化会�
 
 ```sh
 git clone --recurse-submodules --branch main_proton_steamarm64 \
-  https://github.com/yifengling0/VintagePomeloPro.git
+  https://github.com/SatoshiZpy/VintagePomeloPro.git
 cd VintagePomeloPro
 make test-ci-release test-linux-runtime-components
 python3 scripts/prepare_linux_runtime_components.py

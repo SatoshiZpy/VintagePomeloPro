@@ -19,6 +19,8 @@ export type HostTaskActivator = (task: HostWindowTask, current: () => boolean) =
 interface PendingSteamGameLaunch { appId: string; intent: number; ticket: number; expiresAt: number; sessionId: string; promptKey: string; }
 
 interface WindowEventData {
+  w?: number;
+  h?: number;
   clientPid?: number;
   sessionId?: string;
   title?: string;
@@ -30,6 +32,9 @@ export class HostWindowTasks {
   private static instance: HostWindowTasks | null = null;
   private windows: Map<number, HostWindowTask> = new Map<number, HostWindowTask>();
   private listeners: Set<HostTaskListener> = new Set<HostTaskListener>();
+  // Guest content dimensions from compositor commits, before host DPI scaling.
+  private contentSizes: Map<number, string> = new Map<number, string>();
+  getContentResolution(id: number): string { return this.contentSizes.get(id) ?? '—'; }
   private generation: number = 0;
   private steamSessions: Set<string> = new Set<string>();
   private endedSteamSessions: Set<string> = new Set<string>();
@@ -110,6 +115,7 @@ export class HostWindowTasks {
     ++this.request;
     this.requestedKey = '';
     this.windows.clear();
+    this.contentSizes.clear();
     this.steamSessions.clear();
     this.steamClientHosts.clear();
     this.endedSteamSessions.clear();
@@ -123,6 +129,13 @@ export class HostWindowTasks {
     if (id <= 0) return;
     let data: WindowEventData = {};
     try { data = (JSON.parse(text) as WindowEventData) || {}; } catch (_) {}
+    if (event === 'destroyed' || event === 'created') this.contentSizes.delete(id);
+    if (event === 'created' || event === 'resize') {
+      const w = data.w ?? 0; const h = data.h ?? 0;
+      if (Number.isSafeInteger(w) && Number.isSafeInteger(h) && w > 0 && h > 0 && w <= 32768 && h <= 32768) {
+        this.contentSizes.set(id, `${w}×${h}`);
+      }
+    }
     let task = this.windows.get(id);
     if (event === 'destroyed') {
       if (!task) return;
