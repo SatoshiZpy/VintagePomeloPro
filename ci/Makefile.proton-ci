@@ -1,0 +1,12 @@
+# CI rebuild of the device-tested GNU x64 profile. Other runtimes retain the
+# locked full-build provenance; the app-only guard is not weakened.
+CACHE ?= /data/proton-ci
+GNU_CC ?= /usr/bin/aarch64-linux-gnu-gcc-15
+LLVM_MINGW := $(CACHE)/tools/llvm-mingw-20260826-ucrt-ubuntu-22.04-x86_64
+.PHONY: proton-ci-rebuild proton-ci-package
+proton-ci-rebuild:
+	$(MAKE) -f ci/Makefile.proton-dxvk OUT=$(CACHE)/proton-dxvk-build LLVM_MINGW=$(LLVM_MINGW) proton-dxvk
+	$(MAKE) -f ci/Makefile.proton-graphics OUT=$(CACHE)/proton-graphics-build GNU_CC=$(GNU_CC) GNU_LINK=$(CACHE)/proton-graphics-link ARCHIVE=$(CACHE)/GE-Proton11-11-aarch64.tar.gz proton-x64-graphics
+	python3 scripts/ci_proton_graphics.py stage --cache $(CACHE)
+proton-ci-package:
+	$(MAKE) -f ci/Makefile.proton-graphics hap-proton-x64

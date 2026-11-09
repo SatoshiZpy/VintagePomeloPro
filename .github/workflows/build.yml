@@ -36,6 +36,9 @@ permissions:
 jobs:
   gnu-components:
     name: Verify GNU dependencies from a clean checkout
+    # The device-tested profile has its own focused native rebuild workflow.
+    # Keep this full-source lane available explicitly and for other branches/tags.
+    if: github.ref != 'refs/heads/main_proton_steamarm64' || inputs.full_rebuild == true || inputs.release_tag != ''
     runs-on: ubuntu-26.04
     timeout-minutes: 15
     steps:

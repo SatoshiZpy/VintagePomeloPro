@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "profile": "hmdeck-1.5.5-proton-x64-20261109",
+  "base": {
+    "repository": "SatoshiZpy/VintagePomeloPro",
+    "commit": "3c634ea9440fb9bd6e283c3952b3f16c7241d3c1",
+    "artifactId": 13571980203,
+    "runId": 42360978164,
+    "archiveDigest": "e5bac1f2628d8650a2499ace3d1f4609fa589e6f85fefa88ef6fadaa399c7111",
+    "hapSha256": "7082537c190a6039967ea66bc5f5087c2c8daca6aad4a3aa68e57561a8cfaf9f",
+    "hapBytes": 727931350,
+    "url": "https://github.com/SatoshiZpy/VintagePomeloPro/releases/download/build-inputs-20261109/base-3c634ea9-arm64-unsigned.hap",
+    "sourceManifestSha256": "8a1e72974b0c293f3667f52cec9251b96497ab2128b69ccb82b252f0ac1a09d7"
+  },
+  "container": "ghcr.io/panedioic/winehua-buildenv@sha256:59f64bde2c1f6b54ad7505032622be94d52279b6c1523d54204992a2249b1a8c",
+  "testedReference": {
+    "unsignedHapSha256": "da7877a10b851b4debb1e4c92e575c0d00f5a9ee8f373bd4b0af9e3e072f044b",
+    "sourceSnapshotSha256": "67a98c430c824b9720cc73ad64ac58d2568b469f7838b3bd501041d980d7884d",
+    "graphicsAdapterSha256": "31fb9e78a94f0100be66bba83ffea723792e5ead0763665f3d40d6908d318782"
+  },
+  "rebuild": [
+    "complete steamohos_gnu_child target",
+    "GNU probe and Vulkan adapter",
+    "DXVK Legacy ARM64X"
+  ],
+  "reuse": "Other Wine/FEX/Mesa runtime bytes must match the verified full CI base exactly."
+}

@@ -1,0 +1,82 @@
+name: Build HMDeck tested Proton profile
+on:
+  push:
+    branches: [main_proton_steamarm64]
+    paths-ignore: ['**.md']
+  workflow_dispatch:
+permissions:
+  contents: read
+  packages: read
+concurrency:
+  group: tested-proton-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 90
+    container:
+      image: ghcr.io/panedioic/winehua-buildenv@sha256:59f64bde2c1f6b54ad7505032622be94d52279b6c1523d54204992a2249b1a8c
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: false
+      - name: Prepare pinned DXVK source and build tools
+        run: |
+          set -euo pipefail
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git submodule update --init --recursive --depth=1 -- thirdparty/dxvk
+          apt-get update
+          apt-get install -y --no-install-recommends gcc-15-aarch64-linux-gnu g++-15-aarch64-linux-gnu libvulkan-dev glslang-tools
+      - name: Verify checkout scope and restore locked build inputs
+        run: python3 scripts/ci_proton_graphics.py prepare
+      - name: Test graphics compatibility and nonblocking samplers
+        run: |
+          set -euo pipefail
+          python3 host_tests/proton_graphics_build_test.py
+          python3 host_tests/proton_ci_guard_test.py
+          python3 host_tests/proton_bootstrap_closure_test.py
+          for suite in proton_transport_profile proton_vulkan_bgra_usage proton_vulkan_profile proton_vulkan_pass_profile native_exec_ranges; do
+            g++ -std=c++17 -O1 -Wall -Wextra -Wno-misleading-indentation -pthread "host_tests/${suite}_test.cpp" -o "/tmp/$suite-test"
+            "/tmp/$suite-test"
+          done
+          /tmp/proton_vulkan_profile-test disabled
+          /apps/harmony/tool/node/bin/node scripts/run_local_tests.cjs
+      - name: Rebuild DXVK and complete GNU graphics native targets
+        run: make -f ci/Makefile.proton-ci proton-ci-rebuild
+      - name: Install locked ArkTS dependencies
+        run: |
+          ohpm install --all
+          git diff --exit-code -- oh-package.json5 oh-package-lock.json5 entry/oh-package.json5 entry/oh-package-lock.json5
+      - name: Build and verify API 23 ARM64 HAP
+        run: make -f ci/Makefile.proton-ci proton-ci-package
+      - name: Upload unsigned HAP and build provenance
+        uses: actions/upload-artifact@v4
+        with:
+          name: HMDeck-proton-profile-arm64-unsigned-${{ github.sha }}
+          path: |
+            entry/build/default/outputs/default/entry-default-unsigned.hap
+            graphics-build-report.json
+            docs/graphics/proton-ci-profile.lock.json
+            docs/graphics/proton-ci-base-source.json
+            ci-artifacts/graphics-native/native-child-build.json
+          if-no-files-found: error
+          retention-days: 30
+      - name: Upload diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: HMDeck-proton-profile-diagnostics-${{ github.sha }}
+          path: |
+            .hvigor/outputs/local-check/**
+            ci-artifacts/graphics-input.json
+            /data/proton-ci/proton-dxvk-build/**/*.err
+            /data/proton-ci/proton-dxvk-build/**/*.log
+          if-no-files-found: ignore
+          retention-days: 7
