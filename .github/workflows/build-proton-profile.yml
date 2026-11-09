@@ -36,8 +36,10 @@ jobs:
           # Keep the existing exact-byte patch verification deterministic.
           git -C thirdparty/dxvk config core.abbrev 8
           apt-get update
-          apt-get install -y --no-install-recommends gcc-aarch64-linux-gnu g++-aarch64-linux-gnu libvulkan-dev glslang-tools
+          apt-get install -y --no-install-recommends gcc-aarch64-linux-gnu g++-aarch64-linux-gnu libvulkan-dev libwayland-dev glslang-tools
           test "$(aarch64-linux-gnu-gcc -dumpversion)" = 15
+          # Check the entire adapter's include closure before the DXVK build.
+          aarch64-linux-gnu-g++ -fsyntax-only -Wall -Wextra -Werror -Wno-misleading-indentation entry/src/main/cpp/linux_steam/gnu_fixture/proton_vulkan_x64.cpp
       - name: Verify checkout scope and restore locked build inputs
         run: python3 scripts/ci_proton_graphics.py prepare
       - name: Test graphics compatibility and nonblocking samplers
