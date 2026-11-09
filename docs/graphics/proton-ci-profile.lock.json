@@ -23,5 +23,10 @@
     "GNU probe and Vulkan adapter",
     "DXVK Legacy ARM64X"
   ],
-  "reuse": "Other Wine/FEX/Mesa runtime bytes must match the verified full CI base exactly."
+  "reuse": "Other Wine/FEX/Mesa runtime bytes must match the verified full CI base exactly.",
+  "downloadAssets": {
+    "https://github.com/SatoshiZpy/VintagePomeloPro/releases/download/build-inputs-20261109/base-3c634ea9-arm64-unsigned.hap": "https://api.github.com/repos/SatoshiZpy/VintagePomeloPro/releases/assets/726253745",
+    "https://github.com/GloriousEggroll/proton-ge-custom/releases/download/GE-Proton11-11/GE-Proton11-11-aarch64.tar.gz": "https://api.github.com/repos/GloriousEggroll/proton-ge-custom/releases/assets/657061708",
+    "https://github.com/mstorsjo/llvm-mingw/releases/download/20260826/llvm-mingw-20260826-ucrt-ubuntu-22.04-x86_64.tar.xz": "https://api.github.com/repos/mstorsjo/llvm-mingw/releases/assets/531241525"
+  }
 }

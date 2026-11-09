@@ -50,6 +50,8 @@ jobs:
             /data/proton-ci/tools/llvm-mingw.tar.xz
           key: proton-downloads-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('docs/graphics/proton-ci-profile.lock.json', 'docs/graphics/proton-dxvk.lock.json', 'docs/linux-steam/gnu-proton-probe.lock.json') }}
       - name: Verify checkout scope and restore locked build inputs
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: python3 scripts/ci_proton_graphics.py prepare
       - name: Cache verified downloads
         if: steps.downloads.outputs.cache-hit != 'true'

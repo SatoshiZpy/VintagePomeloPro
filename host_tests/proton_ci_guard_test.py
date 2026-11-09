@@ -13,6 +13,34 @@ import ci_proton_graphics as ci
 
 
 class GuardTest(unittest.TestCase):
+    def test_api_redirect_never_forwards_github_token(self):
+        source = 'https://github.com/owner/repo/releases/download/tag/input.hap'
+        api = 'https://api.github.com/repos/owner/repo/releases/assets/123'
+        redirect = ci.urllib.error.HTTPError(api, 302, 'redirect', {'Location': 'https://release-assets.githubusercontent.com/input'}, None)
+        with patch.dict(ci.os.environ, {'GH_TOKEN': 'unit-test-token'}), \
+             patch.object(ci.urllib.request, 'build_opener') as opener, \
+             patch.object(ci.urllib.request, 'urlopen', return_value=io.BytesIO(b'valid')) as storage:
+            opener.return_value.open.side_effect = redirect
+            with ci.open_download(source, api) as response:
+                self.assertEqual(response.read(), b'valid')
+            api_request = opener.return_value.open.call_args.args[0]
+            self.assertEqual(api_request.get_header('Authorization'), 'Bearer unit-test-token')
+            self.assertIsNone(storage.call_args.args[0].get_header('Authorization'))
+
+    def test_api_asset_cannot_change_repository(self):
+        with self.assertRaisesRegex(ValueError, 'locked source repository'):
+            ci.open_download('https://github.com/owner/repo/releases/download/tag/input',
+                             'https://api.github.com/repos/other/repo/releases/assets/123')
+
+    def test_api_redirect_requires_https(self):
+        api = 'https://api.github.com/repos/owner/repo/releases/assets/123'
+        redirect = ci.urllib.error.HTTPError(api, 302, 'redirect', {'Location': 'http://example.invalid/input'}, None)
+        with patch.dict(ci.os.environ, {'GH_TOKEN': 'unit-test-token'}), \
+             patch.object(ci.urllib.request, 'build_opener') as opener:
+            opener.return_value.open.side_effect = redirect
+            with self.assertRaisesRegex(ValueError, 'transport'):
+                ci.open_download('https://github.com/owner/repo/releases/download/tag/input', api)
+
     def test_gateway_timeout_retried_and_validated(self):
         with tempfile.TemporaryDirectory() as tmp, patch.object(ci.time, 'sleep') as sleep:
             target = Path(tmp) / 'input.hap'

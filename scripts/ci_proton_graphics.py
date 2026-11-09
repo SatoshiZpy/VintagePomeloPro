@@ -10,6 +10,7 @@ import hashlib
 import http.client
 import io
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -69,20 +70,47 @@ def guard():
     return lock
 
 
-def download(url, target, digest, algorithm='sha256', size=None):
+def open_download(url, asset_api=None):
+    headers = {'User-Agent': 'HMDeck-CI/1'}
+    if not asset_api:
+        return urllib.request.urlopen(urllib.request.Request(url, headers=headers), timeout=120)
+    # Match the older successful app-only lane: authenticated GitHub API,
+    # then a separate unauthenticated request to the signed storage URL.
+    parts = url.split('/')
+    expected = 'https://api.github.com/repos/' + '/'.join(parts[3:5]) + '/releases/assets/'
+    if not url.startswith('https://github.com/') or not asset_api.startswith(expected) or not asset_api[len(expected):].isdigit():
+        raise ValueError('Release asset API does not match the locked source repository')
+    token = os.environ.get('GH_TOKEN')
+    if not token:
+        raise ValueError('GH_TOKEN required to resolve the pinned release asset')
+    request = urllib.request.Request(asset_api + '?nonce=' + str(time.time_ns()),
+        headers={**headers, 'Authorization': 'Bearer ' + token, 'Accept': 'application/octet-stream'})
+    try:
+        return urllib.request.build_opener(reuse.NoRedirect).open(request, timeout=120)
+    except urllib.error.HTTPError as error:
+        if error.code != 302:
+            raise
+        location = error.headers['Location']
+        error.close()
+    if not location.startswith('https://'):
+        raise ValueError('Invalid release asset download transport')
+    return urllib.request.urlopen(urllib.request.Request(location, headers=headers), timeout=120)
+
+
+def download(url, target, digest, algorithm='sha256', size=None, asset_api=None):
     if target.exists() and (size is None or target.stat().st_size == size):
         if file_hash(target, algorithm) == digest:
             return
     target.parent.mkdir(parents=True, exist_ok=True)
     pending = target.with_suffix(target.suffix + '.pending')
-    # Sources are pinned public HTTPS artifacts; never attach GitHub credentials
-    # to redirected release storage requests.
     for attempt in range(4):
         try:
-            with urllib.request.urlopen(url, timeout=120) as src, pending.open('wb') as dst:
+            with open_download(url, asset_api) as src, pending.open('wb') as dst:
                 shutil.copyfileobj(src, dst, 1024 * 1024)
         except (urllib.error.URLError, TimeoutError, ConnectionError, http.client.IncompleteRead) as exc:
             pending.unlink(missing_ok=True)
+            if isinstance(exc, urllib.error.HTTPError):
+                exc.close()
             if isinstance(exc, urllib.error.HTTPError) and exc.code not in (408, 429, 500, 502, 503, 504):
                 raise
             if attempt == 3:
@@ -116,7 +144,8 @@ def prepare_inputs(cache, local_base=None):
             raise ValueError('Local full-base HAP differs from lock')
         shutil.copyfile(local_base, hap)
     else:
-        download(lock['base']['url'], hap, lock['base']['hapSha256'], size=lock['base']['hapBytes'])
+        download(lock['base']['url'], hap, lock['base']['hapSha256'], size=lock['base']['hapBytes'],
+                 asset_api=lock['downloadAssets'][lock['base']['url']])
     ci = base / 'ci-artifacts'
     ci.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(ROOT / 'docs/graphics/proton-ci-base-source.json', ci / 'ci-source.json')
@@ -134,14 +163,16 @@ def prepare_inputs(cache, local_base=None):
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(z.read('resources/rawfile/' + relative))
     ge = read(ROOT / 'docs/linux-steam/gnu-proton-probe.lock.json')['distribution']
-    download(ge['source'], cache / ge['file'], ge['sha512'], 'sha512', ge['bytes'])
+    download(ge['source'], cache / ge['file'], ge['sha512'], 'sha512', ge['bytes'],
+             asset_api=lock['downloadAssets'][ge['source']])
     dxvk = read(ROOT / 'docs/graphics/proton-dxvk.lock.json')
     tools = cache / 'tools'
     version = dxvk['toolchain']['version']
     dirname = f'llvm-mingw-{version}-ucrt-ubuntu-22.04-x86_64'
     archive = tools / 'llvm-mingw.tar.xz'
-    download(f'https://github.com/mstorsjo/llvm-mingw/releases/download/{version}/{dirname}.tar.xz',
-             archive, dxvk['toolchain']['archiveSha256'], size=dxvk['toolchain']['bytes'])
+    tool_url = f'https://github.com/mstorsjo/llvm-mingw/releases/download/{version}/{dirname}.tar.xz'
+    download(tool_url, archive, dxvk['toolchain']['archiveSha256'], size=dxvk['toolchain']['bytes'],
+             asset_api=lock['downloadAssets'][tool_url])
     if not (tools / dirname / 'bin/clang').exists():
         with tarfile.open(archive) as t:
             t.extractall(tools, filter='data')
