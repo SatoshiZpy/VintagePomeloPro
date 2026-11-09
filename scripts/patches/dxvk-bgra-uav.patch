@@ -1,0 +1,753 @@
+diff --git a/src/d3d11/d3d11_bc.cpp b/src/d3d11/d3d11_bc.cpp
+index 517ca7c4..6c8fbc19 100644
+--- a/src/d3d11/d3d11_bc.cpp
++++ b/src/d3d11/d3d11_bc.cpp
+@@ -2,8 +2,15 @@
+ #include <cstdint>
+ #include <cstring>
+ #include <limits>
++#include <array>
++#include <chrono>
++#include <fstream>
++#include <mutex>
+ 
+ #include "d3d11_bc.h"
++#include "../dxvk/dxvk_format.h"
++#include "../dxvk/dxvk_util.h"
++#include "../util/util_env.h"
+ 
+ /* Reuse Wine's already-vendored, MIT-licensed BC decoder.  Keeping one
+  * implementation avoids a second large decoder copy in the WineHua source
+@@ -18,6 +25,132 @@
+ #undef BCDEC_STATIC
+ 
+ namespace dxvk {
++  namespace {
++    using BcClock = std::chrono::steady_clock;
++    struct BcProfileRow {
++      uint64_t decodeCalls = 0, initCalls = 0, failed = 0;
++      uint64_t decodeUs = 0, decodeMaxUs = 0, inputBytes = 0, outputBytes = 0;
++      uint64_t created = 0, destroyed = 0, live = 0, peakLive = 0;
++      uint64_t logical = 0, backing = 0, allocation = 0, peakAllocation = 0;
++      VkFormat backingFormat = VK_FORMAT_UNDEFINED;
++    };
++    struct BcProfile {
++      std::mutex mutex;
++      std::array<BcProfileRow, 16 * 3> rows{};
++      BcClock::time_point start = BcClock::now(), last = start;
++      uint64_t sequence = 0;
++    };
++    BcProfile& bcProfile() { static BcProfile value; return value; }
++    int bcSlot(VkFormat format, int path) {
++      if (format < VK_FORMAT_BC1_RGB_UNORM_BLOCK || format > VK_FORMAT_BC7_SRGB_BLOCK)
++        return -1;
++      return (int(format) - int(VK_FORMAT_BC1_RGB_UNORM_BLOCK)) * 3 + path;
++    }
++    uint64_t bcImageBytes(VkFormat format, VkExtent3D extent, uint32_t levels, uint32_t layers) {
++      uint64_t bytes = 0;
++      for (uint32_t i = 0; i < levels; i++) {
++        bytes += util::computeImageDataSize(format, extent) * layers;
++        extent = { std::max(1u, extent.width / 2), std::max(1u, extent.height / 2),
++                   std::max(1u, extent.depth / 2) };
++      }
++      return bytes;
++    }
++    void reportBcLocked(BcProfile& p, BcClock::time_point now) {
++      if (now - p.last < std::chrono::seconds(5)) return;
++      p.last = now;
++      const auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(now - p.start).count();
++      ++p.sequence;
++      for (size_t i = 0; i < p.rows.size(); i++) {
++        const auto& r = p.rows[i];
++        if (!r.created && !r.decodeCalls) continue;
++        Logger::info(str::format("WineHuaBcProfile: seq=", p.sequence, " elapsed_us=", elapsed,
++          " source_format=", unsigned(VK_FORMAT_BC1_RGB_UNORM_BLOCK) + i / 3,
++          " path=", i % 3 == 0 ? "native" : i % 3 == 1 ? "cpu" : "virtual",
++          " backing_format=", unsigned(r.backingFormat),
++          " decode_calls=", r.decodeCalls, " initial_calls=", r.initCalls, " failed=", r.failed,
++          " decode_wall_us=", r.decodeUs, " decode_max_us=", r.decodeMaxUs,
++          " input_payload_bytes=", r.inputBytes, " output_payload_bytes=", r.outputBytes,
++          " created=", r.created, " destroyed=", r.destroyed,
++          " live_images=", r.live, " peak_live_images=", r.peakLive,
++          " live_bc_payload_bytes=", r.logical, " live_backing_payload_bytes=", r.backing,
++          " live_image_allocation_bytes=", r.allocation, " peak_image_allocation_bytes=", r.peakAllocation));
++      }
++    }
++    struct BcDecodeMeasurement {
++      VkFormat format;
++      bool initial, enabled, success = false;
++      uint64_t input = 0, output = 0;
++      BcClock::time_point start;
++      BcDecodeMeasurement(VkFormat f, bool init) : format(f), initial(init), enabled(D3D11BcProfileEnabled()) {
++        if (enabled) start = BcClock::now();
++      }
++      ~BcDecodeMeasurement() {
++        const int slot = bcSlot(format, 1);
++        if (!enabled || slot < 0) return;
++        const auto now = BcClock::now();
++        const uint64_t us = std::chrono::duration_cast<std::chrono::microseconds>(now - start).count();
++        auto& p = bcProfile(); std::lock_guard<std::mutex> lock(p.mutex);
++        auto& r = p.rows[slot];
++        ++r.decodeCalls; r.initCalls += initial; r.failed += !success;
++        r.decodeUs += us; r.decodeMaxUs = std::max(r.decodeMaxUs, us);
++        if (success) { r.inputBytes += input; r.outputBytes += output; }
++        reportBcLocked(p, now);
++      }
++    };
++  }
++
++  bool D3D11BcProfileEnabled() {
++    static const bool enabled = [] {
++      const auto setting = env::getEnvVar("WINEHUA_DXVK_BC_PROFILE");
++      bool on = setting == "1";
++      if (setting.empty()) {
++        std::ifstream marker("C:\\windows\\temp\\winehua_bc_profile", std::ios::binary);
++        char bytes[3] = {};
++        marker.read(bytes, sizeof(bytes));
++        on = (marker.gcount() == 1 && bytes[0] == '1')
++          || (marker.gcount() == 2 && bytes[0] == '1' && bytes[1] == '\n');
++      }
++      if (on) Logger::info("WineHuaBcProfile: enabled=1 schema=1 period_ms=5000 counters=cumulative memory_scope=live_d3d11_image_owners physical_residency=unmeasured decode_time=wall_including_allocation_and_copy");
++      return on;
++    }();
++    return enabled;
++  }
++
++  D3D11BcProfileImage ProfileD3D11BcImage(VkFormat source, VkFormat backing,
++      VkExtent3D extent, uint32_t levels, uint32_t layers, bool virtualBc,
++      VkExtent3D backingExtent, uint32_t backingLevels, uint64_t allocationBytes) {
++    D3D11BcProfileImage result;
++    if (!D3D11BcProfileEnabled()) return result;
++    const int path = virtualBc ? 2 : bcSlot(backing, 0) >= 0 ? 0 : 1;
++    result.slot = bcSlot(source, path);
++    if (result.slot < 0) return result;
++    result.logicalBytes = bcImageBytes(source, extent, levels, layers);
++    result.backingBytes = bcImageBytes(backing, backingExtent, backingLevels, layers);
++    result.allocationBytes = allocationBytes;
++    auto& p = bcProfile(); std::lock_guard<std::mutex> lock(p.mutex);
++    auto& r = p.rows[result.slot];
++    r.backingFormat = backing; ++r.created; ++r.live;
++    r.peakLive = std::max(r.peakLive, r.live);
++    r.logical += result.logicalBytes; r.backing += result.backingBytes; r.allocation += allocationBytes;
++    r.peakAllocation = std::max(r.peakAllocation, r.allocation);
++    reportBcLocked(p, BcClock::now());
++    return result;
++  }
++
++  void ReleaseD3D11BcProfileImage(const D3D11BcProfileImage& image) {
++    if (image.slot < 0) return;
++    auto& p = bcProfile(); std::lock_guard<std::mutex> lock(p.mutex);
++    auto& r = p.rows[image.slot];
++    ++r.destroyed; --r.live;
++    r.logical -= image.logicalBytes; r.backing -= image.backingBytes; r.allocation -= image.allocationBytes;
++  }
++
++  void ReportD3D11BcProfile() {
++    if (!D3D11BcProfileEnabled()) return;
++    auto& p = bcProfile(); std::lock_guard<std::mutex> lock(p.mutex);
++    reportBcLocked(p, BcClock::now());
++  }
++
+   namespace {
+ 
+     struct BcFormatInfo {
+@@ -128,7 +261,9 @@ namespace dxvk {
+     const void*                    source,
+           VkDeviceSize             sourceRowPitch,
+           VkDeviceSize             sourceSlicePitch,
+-          D3D11CpuImage&           result) {
++          D3D11CpuImage&           result,
++          bool                    initialUpload) {
++    BcDecodeMeasurement measurement(format, initialUpload);
+     const BcFormatInfo info = GetBcFormatInfo(format);
+     if (!info.blockBytes || !info.pixelBytes || !source
+      || !extent.width || !extent.height || !extent.depth)
+@@ -197,6 +332,9 @@ namespace dxvk {
+       }
+     }
+ 
++    measurement.input = uint64_t(blocksX) * blocksY * extent.depth * info.blockBytes;
++    measurement.output = totalSize;
++    measurement.success = true;
+     return true;
+   }
+ 
+diff --git a/src/d3d11/d3d11_bc.h b/src/d3d11/d3d11_bc.h
+index 6c36d5f5..4215c098 100644
+--- a/src/d3d11/d3d11_bc.h
++++ b/src/d3d11/d3d11_bc.h
+@@ -5,6 +5,19 @@
+ 
+ namespace dxvk {
+ 
++  // Opt-in diagnostic. Counts live D3D11 image owners, not physical GPU
++  // residency (queued commands may retain an image after its owner dies).
++  struct D3D11BcProfileImage {
++    int slot = -1;
++    uint64_t logicalBytes = 0, backingBytes = 0, allocationBytes = 0;
++  };
++  bool D3D11BcProfileEnabled();
++  D3D11BcProfileImage ProfileD3D11BcImage(VkFormat source, VkFormat backing,
++    VkExtent3D extent, uint32_t levels, uint32_t layers, bool virtualBc,
++    VkExtent3D backingExtent, uint32_t backingLevels, uint64_t allocationBytes);
++  void ReleaseD3D11BcProfileImage(const D3D11BcProfileImage& image);
++  void ReportD3D11BcProfile();
++
+   /**
+    * Decompresses one BC image subresource into the uncompressed Vulkan
+    * format selected by WineHua's DXGI format fallback.  This is deliberately
+@@ -17,6 +30,7 @@ namespace dxvk {
+     const void*                    source,
+           VkDeviceSize             sourceRowPitch,
+           VkDeviceSize             sourceSlicePitch,
+-          D3D11CpuImage&           result);
++          D3D11CpuImage&           result,
++          bool                    initialUpload = false);
+ 
+ }
+diff --git a/src/d3d11/d3d11_context.cpp b/src/d3d11/d3d11_context.cpp
+index b7748234..69b1a76b 100644
+--- a/src/d3d11/d3d11_context.cpp
++++ b/src/d3d11/d3d11_context.cpp
+@@ -623,6 +623,12 @@ namespace dxvk {
+     VkFormat uavFormat = m_parent->LookupFormat(uavDesc.Format, DXGI_VK_FORMAT_MODE_ANY).Format;
+     VkFormat rawFormat = m_parent->LookupFormat(uavDesc.Format, DXGI_VK_FORMAT_MODE_RAW).Format;
+     
++    if (uav->GetResourceType() != D3D11_RESOURCE_DIMENSION_BUFFER
++     && uav->GetImageView()->info().bgraUav) {
++      uavFormat = VK_FORMAT_R8G8B8A8_UNORM;
++      rawFormat = VK_FORMAT_R8G8B8A8_UINT;
++    }
++
+     if (uavFormat != rawFormat && rawFormat == VK_FORMAT_UNDEFINED) {
+       Logger::err(str::format("D3D11: ClearUnorderedAccessViewUint: No raw format found for ", uavFormat));
+       return;
+diff --git a/src/d3d11/d3d11_initializer.cpp b/src/d3d11/d3d11_initializer.cpp
+index 4b981f18..4fb14eec 100644
+--- a/src/d3d11/d3d11_initializer.cpp
++++ b/src/d3d11/d3d11_initializer.cpp
+@@ -204,7 +204,7 @@ namespace dxvk {
+             } else if (bcEmulated) {
+               if (!DecodeD3D11BcImage(packedFormat, mipLevelExtent,
+                                       uploadData, uploadRowPitch, uploadSlicePitch,
+-                                      converted))
++                                      converted, true))
+                 throw DxvkError("WineHua: Failed to decompress initial BC texture data");
+               uploadData = converted.data.data();
+               uploadRowPitch = converted.rowPitch;
+diff --git a/src/d3d11/d3d11_swapchain.cpp b/src/d3d11/d3d11_swapchain.cpp
+index c194062d..6f0b4b33 100644
+--- a/src/d3d11/d3d11_swapchain.cpp
++++ b/src/d3d11/d3d11_swapchain.cpp
+@@ -1,6 +1,7 @@
+ #include "d3d11_context_imm.h"
+ #include "d3d11_device.h"
+ #include "d3d11_swapchain.h"
++#include "d3d11_bc.h"
+ 
+ #include "../dxvk/dxvk_winehua_trace.h"
+ 
+@@ -254,6 +255,8 @@ namespace dxvk {
+     if (m_winehuaPerfDiagnosis)
+       RecordWinehuaPerf(perfStart, high_resolution_clock::now(), SyncInterval, PresentFlags);
+ 
++    ReportD3D11BcProfile();
++
+     return hr;
+   }
+ 
+diff --git a/src/d3d11/d3d11_texture.cpp b/src/d3d11/d3d11_texture.cpp
+index e5aface7..f7fbad3f 100644
+--- a/src/d3d11/d3d11_texture.cpp
++++ b/src/d3d11/d3d11_texture.cpp
+@@ -156,6 +156,27 @@ namespace dxvk {
+       formatFamily.Add(VK_FORMAT_R32_SINT);
+     }
+ 
++    // BGRA storage is optional on Vulkan. Keep BGRA backing/SRVs and use
++    // compatible RGBA UAV views, with shader read/write and clear swizzles.
++    // No format-feature bits are fabricated and no backing bytes are converted.
++    if ((m_desc.BindFlags & D3D11_BIND_UNORDERED_ACCESS)
++     && (m_desc.Format == DXGI_FORMAT_B8G8R8A8_TYPELESS
++      || m_desc.Format == DXGI_FORMAT_B8G8R8A8_UNORM)) {
++      auto adapter = pDevice->GetDXVKDevice()->adapter();
++      auto bgra = adapter->formatProperties(VK_FORMAT_B8G8R8A8_UNORM);
++      auto rgba = adapter->formatProperties(VK_FORMAT_R8G8B8A8_UNORM);
++      auto raw = adapter->formatProperties(VK_FORMAT_R8G8B8A8_UINT);
++      if (!(bgra.optimalTilingFeatures & VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT)
++       && (rgba.optimalTilingFeatures & VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT)
++       && (raw.optimalTilingFeatures & VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT)) {
++        m_bgraUavEmulated = true;
++        formatFamily.Add(VK_FORMAT_B8G8R8A8_UNORM);
++        formatFamily.Add(VK_FORMAT_R8G8B8A8_UNORM);
++        formatFamily.Add(VK_FORMAT_R8G8B8A8_UINT);
++        imageInfo.flags |= VK_IMAGE_CREATE_EXTENDED_USAGE_BIT;
++      }
++    }
++
+     // The image must be marked as mutable if it can be reinterpreted
+     // by a view with a different format. Depth-stencil formats cannot
+     // be reinterpreted in Vulkan, so we'll ignore those.
+@@ -380,11 +401,14 @@ namespace dxvk {
+ 
+     if (imageInfo.sharing.mode == DxvkSharedHandleMode::Export)
+       ExportImageInfo();
++    m_bcProfile = ProfileD3D11BcImage(m_packedFormat, imageInfo.format,
++      {m_desc.Width, m_desc.Height, m_desc.Depth}, m_desc.MipLevels, m_desc.ArraySize,
++      GetVirtualBcLayout() != nullptr, imageInfo.extent, imageInfo.mipLevels, m_image->memSize());
+   }
+   
+   
+   D3D11CommonTexture::~D3D11CommonTexture() {
+-    
++    ReleaseD3D11BcProfileImage(m_bcProfile);
+   }
+   
+   
+@@ -530,6 +554,10 @@ namespace dxvk {
+     if (m_rgba8SnormRtEmulated)
+       return Format == DXGI_FORMAT_R8G8B8A8_SNORM && Plane == 0;
+ 
++    if (m_bgraUavEmulated && BindFlags == D3D11_BIND_UNORDERED_ACCESS
++     && Format == DXGI_FORMAT_B8G8R8A8_UNORM && Plane == 0)
++      return CheckFormatFeatureSupport(VK_FORMAT_R8G8B8A8_UNORM, VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT);
++
+     // Check whether the view format is compatible
+     DXGI_VK_FORMAT_MODE formatMode = GetFormatMode();
+     DXGI_VK_FORMAT_INFO viewFormat = m_device->LookupFormat(Format,        formatMode);
+diff --git a/src/d3d11/d3d11_texture.h b/src/d3d11/d3d11_texture.h
+index 5430d80c..9039002f 100644
+--- a/src/d3d11/d3d11_texture.h
++++ b/src/d3d11/d3d11_texture.h
+@@ -10,6 +10,7 @@
+ #include "d3d11_device_child.h"
+ #include "d3d11_interfaces.h"
+ #include "d3d11_resource.h"
++#include "d3d11_bc.h"
+ 
+ namespace dxvk {
+   
+@@ -254,6 +255,8 @@ namespace dxvk {
+      * WineHua can keep the D3D-visible R8G8B8A8_SNORM contract while using
+      * an RGBA16F Vulkan image on devices that cannot render to SNORM images.
+      */
++    bool IsBgraUavEmulated() const { return m_bgraUavEmulated; }
++
+     bool IsRgba8SnormRtEmulated() const {
+       return m_rgba8SnormRtEmulated;
+     }
+@@ -396,6 +399,7 @@ namespace dxvk {
+   private:
+ 
+     VirtualBcLayout m_virtualBcLayout;
++    D3D11BcProfileImage m_bcProfile;
+     
+     struct MappedBuffer {
+       Rc<DxvkBuffer>        buffer;
+@@ -415,6 +419,7 @@ namespace dxvk {
+     DXGI_USAGE                    m_dxgiUsage;
+     VkFormat                      m_packedFormat;
+     bool                          m_rgba8SnormRtEmulated = false;
++    bool                          m_bgraUavEmulated = false;
+     
+     Rc<DxvkImage>                 m_image;
+     std::vector<MappedBuffer>     m_buffers;
+diff --git a/src/d3d11/d3d11_view_srv.cpp b/src/d3d11/d3d11_view_srv.cpp
+index 7289ff2f..ed93799e 100644
+--- a/src/d3d11/d3d11_view_srv.cpp
++++ b/src/d3d11/d3d11_view_srv.cpp
+@@ -182,6 +182,7 @@ namespace dxvk {
+         const bool srgb = imageFormatInfo(pDevice->LookupPackedFormat(
+           pDesc->Format, texture->GetFormatMode()).Format)->flags.test(DxvkFormatFlag::ColorSpaceSrgb);
+         m_virtualBcMetadata = layout->view(viewInfo.minLevel, viewInfo.numLevels, srgb);
++        viewInfo.virtualBc = true;
+         viewInfo.minLevel = 0;
+         viewInfo.numLevels = 1;
+         viewInfo.swizzle = { VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY,
+diff --git a/src/d3d11/d3d11_view_uav.cpp b/src/d3d11/d3d11_view_uav.cpp
+index 54f826e7..be39d519 100644
+--- a/src/d3d11/d3d11_view_uav.cpp
++++ b/src/d3d11/d3d11_view_uav.cpp
+@@ -61,6 +61,14 @@ namespace dxvk {
+       viewInfo.aspect  = formatInfo.Aspect;
+       viewInfo.swizzle = formatInfo.Swizzle;
+       viewInfo.usage   = VK_IMAGE_USAGE_STORAGE_BIT;
++      if (texture->IsBgraUavEmulated() && pDesc->Format == DXGI_FORMAT_B8G8R8A8_UNORM) {
++        viewInfo.format = VK_FORMAT_R8G8B8A8_UNORM;
++        viewInfo.bgraUav = true;
++        // Logical swizzle is used by clears. Vulkan storage view itself must
++        // have identity components; DXBC typed load/store handle the swizzle.
++        viewInfo.swizzle = { VK_COMPONENT_SWIZZLE_B, VK_COMPONENT_SWIZZLE_G,
++                             VK_COMPONENT_SWIZZLE_R, VK_COMPONENT_SWIZZLE_A };
++      }
+       
+       switch (pDesc->ViewDimension) {
+         case D3D11_UAV_DIMENSION_TEXTURE1D:
+@@ -121,6 +129,11 @@ namespace dxvk {
+ 
+       m_imageView = pDevice->GetDXVKDevice()->createImageView(
+         GetCommonTexture(pResource)->GetImage(), viewInfo);
++      if (viewInfo.bgraUav) {
++        static std::atomic<uint32_t> reports { 0 };
++        if (reports.fetch_add(1) < 16)
++          Logger::info("WineHuaBgraUav: view-created bgra-backing rgba-view shader-rb-swap=1 clear-rb-swap=1");
++      }
+     }
+   }
+   
+diff --git a/src/dxbc/dxbc_compiler.cpp b/src/dxbc/dxbc_compiler.cpp
+index 0314e78f..a6c1fd0a 100644
+--- a/src/dxbc/dxbc_compiler.cpp
++++ b/src/dxbc/dxbc_compiler.cpp
+@@ -3209,7 +3209,29 @@ namespace dxvk {
+     auto image = m_moduleInfo.options.useCombinedImageSampler
+       ? m_module.opImage(texture.imageTypeId, emitLoadCombinedImage(texture, false))
+       : m_module.opLoad(texture.imageTypeId, texture.varId);
+-    return DxbcVirtualBc(m_module, m_constantBuffers.at(SamplerEmulationBindingSlotId).varId, image, slot);
++    if (!m_virtualBcStagesSpec) {
++      m_virtualBcStagesSpec = emitNewSpecConstant(
++        DxvkSpecConstantId(uint32_t(DxvkSpecConstantId::FirstPipelineConstant) + VirtualBcShaderStages),
++        DxbcScalarType::Uint32, 0, "virtual_bc_shader_stages");
++    }
++    uint32_t masked = m_module.opBitwiseAnd(getScalarTypeId(DxbcScalarType::Uint32),
++      m_virtualBcStagesSpec, m_module.constu32(m_programInfo.shaderStage()));
++    uint32_t enabled = m_module.opINotEqual(getScalarTypeId(DxbcScalarType::Bool), masked, m_module.constu32(0));
++    // The stage gate alone retains atlas decoding for every ordinary texture
++    // when just one SRV is virtual. Specialize each SRV as well. Graphics
++    // stages share a conservative union mask; per-stage gating and metadata
++    // still select the actual view, including when slot numbers overlap.
++    const uint32_t word = slot / 32;
++    if (!m_virtualBcTextureSpecs[word]) {
++      m_virtualBcTextureSpecs[word] = emitNewSpecConstant(
++        DxvkSpecConstantId(uint32_t(DxvkSpecConstantId::FirstPipelineConstant) + VirtualBcTextureMask0 + word),
++        DxbcScalarType::Uint32, 0, "virtual_bc_texture_mask");
++    }
++    auto textureBits = m_module.opBitwiseAnd(getScalarTypeId(DxbcScalarType::Uint32),
++      m_virtualBcTextureSpecs[word], m_module.constu32(1u << (slot % 32)));
++    auto textureEnabled = m_module.opINotEqual(getScalarTypeId(DxbcScalarType::Bool), textureBits, m_module.constu32(0));
++    enabled = m_module.opLogicalAnd(getScalarTypeId(DxbcScalarType::Bool), enabled, textureEnabled);
++    return DxbcVirtualBc(m_module, m_constantBuffers.at(SamplerEmulationBindingSlotId).varId, image, slot, enabled);
+   }
+ 
+   void DxbcCompiler::emitTextureQuery(const DxbcShaderInstruction& ins) {
+@@ -3890,6 +3912,30 @@ namespace dxvk {
+   }
+   
+   
++  DxbcRegisterValue DxbcCompiler::emitBgraUavSwizzle(DxbcRegisterValue value, uint32_t reg) {
++    if (reg >= 64 || value.type.ctype != DxbcScalarType::Float32 || value.type.ccount != 4)
++      return value;
++    uint32_t word = reg / 32;
++    if (!m_bgraUavMaskSpec[word]) {
++      m_bgraUavMaskSpec[word] = emitNewSpecConstant(
++        DxvkSpecConstantId(uint32_t(DxvkSpecConstantId::FirstPipelineConstant) + BgraUavMaskLo + word),
++        DxbcScalarType::Uint32, 0, word ? "bgra_uav_mask_hi" : "bgra_uav_mask_lo");
++    }
++    uint32_t masked = m_module.opBitwiseAnd(getScalarTypeId(DxbcScalarType::Uint32),
++      m_bgraUavMaskSpec[word], m_module.constu32(1u << (reg % 32)));
++    DxbcRegisterValue enabled;
++    enabled.type = { DxbcScalarType::Bool, 1 };
++    enabled.id = m_module.opINotEqual(getScalarTypeId(DxbcScalarType::Bool), masked, m_module.constu32(0));
++    const uint32_t components[] = { 2, 1, 0, 3 };
++    uint32_t type = getVectorTypeId(value.type);
++    uint32_t swapped = m_module.opVectorShuffle(type, value.id, value.id, 4, components);
++    const uint32_t conditions[] = { enabled.id, enabled.id, enabled.id, enabled.id };
++    uint32_t conditionVector = m_module.opCompositeConstruct(
++      getVectorTypeId({ DxbcScalarType::Bool, 4 }), 4, conditions);
++    value.id = m_module.opSelect(type, conditionVector, swapped, value.id);
++    return value;
++  }
++
+   void DxbcCompiler::emitTypedUavLoad(const DxbcShaderInstruction& ins) {
+     // load_uav_typed has three operands:
+     //    (dst0) The destination register
+@@ -3911,6 +3957,8 @@ namespace dxvk {
+       m_module.opLoad(uavInfo.imageTypeId, uavInfo.varId),
+       texCoord.id, SpirvImageOperands());
+     
++    uavValue = emitBgraUavSwizzle(uavValue, registerId);
++
+     // Apply component swizzle and mask
+     uavValue = emitRegisterSwizzle(uavValue,
+       ins.src[1].swizzle, ins.dst[0].mask);
+@@ -3943,9 +3991,10 @@ namespace dxvk {
+     
+     // Load the value that will be written to the image. We'll
+     // have to cast it to the component type of the image.
+-    const DxbcRegisterValue texValue = emitRegisterBitcast(
++    DxbcRegisterValue texValue = emitRegisterBitcast(
+       emitRegisterLoad(ins.src[1], DxbcRegMask(true, true, true, true)),
+       uavInfo.stype);
++    texValue = emitBgraUavSwizzle(texValue, ins.dst[0].idx[0].offset);
+     
+     // Write the given value to the image
+     m_module.opImageWrite(
+diff --git a/src/dxbc/dxbc_compiler.h b/src/dxbc/dxbc_compiler.h
+index ec2689c2..fc6beac6 100644
+--- a/src/dxbc/dxbc_compiler.h
++++ b/src/dxbc/dxbc_compiler.h
+@@ -417,6 +417,9 @@ namespace dxvk {
+     DxbcModuleInfo      m_moduleInfo;
+     DxbcProgramInfo     m_programInfo;
+     SpirvModule         m_module;
++    uint32_t            m_bgraUavMaskSpec[2] = { 0, 0 };
++    uint32_t            m_virtualBcStagesSpec = 0;
++    uint32_t            m_virtualBcTextureSpecs[4] = { };
+     
+     Rc<DxbcIsgn>        m_isgn;
+     Rc<DxbcIsgn>        m_osgn;
+@@ -755,8 +758,8 @@ namespace dxvk {
+     void emitTextureSample(
+       const DxbcShaderInstruction&  ins);
+     
+-    void emitTypedUavLoad(
+-      const DxbcShaderInstruction&  ins);
++    DxbcRegisterValue emitBgraUavSwizzle(DxbcRegisterValue value, uint32_t reg);
++    void emitTypedUavLoad(const DxbcShaderInstruction& ins);
+     
+     void emitTypedUavStore(
+       const DxbcShaderInstruction&  ins);
+diff --git a/src/dxbc/dxbc_virtual_bc.cpp b/src/dxbc/dxbc_virtual_bc.cpp
+index 7d05e736..9a118fa4 100644
+--- a/src/dxbc/dxbc_virtual_bc.cpp
++++ b/src/dxbc/dxbc_virtual_bc.cpp
+@@ -2,8 +2,8 @@
+ #include "dxbc_virtual_bc.h"
+ 
+ namespace dxvk {
+-  DxbcVirtualBc::DxbcVirtualBc(SpirvModule& module, uint32_t buffer, uint32_t img, uint32_t texture)
+-  : m(module), cb(buffer), image(img), slot(texture) {
++  DxbcVirtualBc::DxbcVirtualBc(SpirvModule& module, uint32_t buffer, uint32_t img, uint32_t texture, uint32_t enabled)
++  : m(module), cb(buffer), image(img), slot(texture), stageEnabled(enabled) {
+     U = m.defIntType(32, 0); I = m.defIntType(32, 1);
+     F = m.defFloatType(32); B = m.defBoolType();
+     U2 = m.defVectorType(U, 2); I2 = m.defVectorType(I, 2);
+@@ -23,7 +23,11 @@ namespace dxvk {
+   uint32_t DxbcVirtualBc::meta(uint32_t index) {
+     return m.opBitcast(m.defVectorType(U, 4), data(add(u(VirtualBcTextureBase + slot * 16), index)));
+   }
+-  uint32_t DxbcVirtualBc::active() { return m.opINotEqual(B, comp(U, meta(u(0)), 0), u(0)); }
++  uint32_t DxbcVirtualBc::active() {
++    // The stage specialization removes this large fallback when no bound SRV
++    // is virtual BC. Metadata still selects the individual texture at runtime.
++    return m.opLogicalAnd(B, stageEnabled, m.opINotEqual(B, comp(U, meta(u(0)), 0), u(0)));
++  }
+   uint32_t DxbcVirtualBc::levels() { return comp(U, meta(u(0)), 3); }
+   uint32_t DxbcVirtualBc::dimensions(uint32_t lod) {
+     auto info = meta(add(u(1), m.opUMin(U, lod, u(14))));
+@@ -41,10 +45,13 @@ namespace dxvk {
+   }
+   uint32_t DxbcVirtualBc::select(uint32_t value, uint32_t type,
+                                 const std::function<uint32_t()>& emit) {
++    return conditional(active(), value, type, emit);
++  }
++  uint32_t DxbcVirtualBc::conditional(uint32_t condition, uint32_t value, uint32_t type,
++                                     const std::function<uint32_t()>& emit) {
+     uint32_t result = m.newVar(m.defPointerType(type, spv::StorageClassPrivate), spv::StorageClassPrivate);
+     m.opStore(result, value);
+     uint32_t yes = m.allocateId(), end = m.allocateId();
+-    auto condition = active();
+     m.opSelectionMerge(end, spv::SelectionControlMaskNone);
+     m.opBranchConditional(condition, yes, end);
+     m.opLabel(yes);
+@@ -221,15 +228,18 @@ namespace dxvk {
+     auto x = m.opIAdd(I, comp(I, ip, 0), m.consti32(offsetX));
+     auto y = m.opIAdd(I, comp(I, ip, 1), m.consti32(offsetY));
+     auto a = addressed(x, y, mip, sampler);
+-    auto b = addressed(m.opIAdd(I, x, m.consti32(1)), y, mip, sampler);
+-    auto c = addressed(x, m.opIAdd(I, y, m.consti32(1)), mip, sampler);
+-    auto d = addressed(m.opIAdd(I, x, m.consti32(1)), m.opIAdd(I, y, m.consti32(1)), mip, sampler);
+-    auto frac = m.opFract(F2, p);
+-    auto fx = comp(F, frac, 0), fy = comp(F, frac, 1);
+-    auto splat = [&] (uint32_t v) { return vec(F4, {v, v, v, v}); };
+-    auto top = m.opFMix(F4, a, b, splat(fx));
+-    auto bottom = m.opFMix(F4, c, d, splat(fx));
+-    return choose(F4, linear, m.opFMix(F4, top, bottom, splat(fy)), a);
++    // Point filtering needs one decoded texel, not a discarded 2x2 footprint.
++    return conditional(linear, a, F4, [&] {
++      auto b = addressed(m.opIAdd(I, x, m.consti32(1)), y, mip, sampler);
++      auto c = addressed(x, m.opIAdd(I, y, m.consti32(1)), mip, sampler);
++      auto d = addressed(m.opIAdd(I, x, m.consti32(1)), m.opIAdd(I, y, m.consti32(1)), mip, sampler);
++      auto frac = m.opFract(F2, p);
++      auto fx = comp(F, frac, 0), fy = comp(F, frac, 1);
++      auto splat = [&] (uint32_t v) { return vec(F4, {v, v, v, v}); };
++      auto top = m.opFMix(F4, a, b, splat(fx));
++      auto bottom = m.opFMix(F4, c, d, splat(fx));
++      return m.opFMix(F4, top, bottom, splat(fy));
++    });
+   }
+   uint32_t DxbcVirtualBc::filtered(uint32_t coord, uint32_t lod, uint32_t sampler, uint32_t linear) {
+     auto filter = m.opConvertFtoU(U, comp(F, data(u(sampler * 5 + 2)), 2));
+@@ -237,9 +247,15 @@ namespace dxvk {
+     auto base = choose(F, mipLinear, m.opFloor(F, lod), m.opFloor(F, m.opFAdd(F, lod, f(0.5f))));
+     auto mip = m.opConvertFtoU(U, base);
+     auto next = m.opUMin(U, add(mip, u(1)), m.opISub(U, levels(), u(1)));
+-    auto a = sampleMip(coord, mip, sampler, linear), b = sampleMip(coord, next, sampler, linear);
+-    auto t = choose(F, mipLinear, m.opFract(F, lod), f(0));
+-    return m.opFMix(F4, a, b, vec(F4, {t, t, t, t}));
++    auto a = sampleMip(coord, mip, sampler, linear);
++    auto t = m.opFract(F, lod);
++    auto blend = m.opLogicalAnd(B, mipLinear, m.opINotEqual(B, mip, next));
++    blend = m.opLogicalAnd(B, blend, m.opFOrdGreaterThan(B, t, f(0)));
++    // Single-level atlases and integral LODs need no second decode footprint.
++    return conditional(blend, a, F4, [&] {
++      auto b = sampleMip(coord, next, sampler, linear);
++      return m.opFMix(F4, a, b, vec(F4, {t, t, t, t}));
++    });
+   }
+   uint32_t DxbcVirtualBc::implicitLod(uint32_t dx, uint32_t dy) {
+     auto size = m.opConvertUtoF(F2, dimensions(u(0)));
+diff --git a/src/dxbc/dxbc_virtual_bc.h b/src/dxbc/dxbc_virtual_bc.h
+index e9e39db7..57bc12d6 100644
+--- a/src/dxbc/dxbc_virtual_bc.h
++++ b/src/dxbc/dxbc_virtual_bc.h
+@@ -11,7 +11,7 @@ namespace dxvk {
+   // texelFetch reads the byte atlas; filtering happens after BC/sRGB decode.
+   class DxbcVirtualBc {
+   public:
+-    DxbcVirtualBc(SpirvModule& module, uint32_t buffer, uint32_t image, uint32_t slot);
++    DxbcVirtualBc(SpirvModule& module, uint32_t buffer, uint32_t image, uint32_t slot, uint32_t stageEnabled);
+     uint32_t active();
+     void setOffset(int32_t x, int32_t y) { offsetX = x; offsetY = y; }
+     uint32_t dimensions(uint32_t lod);
+@@ -27,7 +27,7 @@ namespace dxvk {
+ 
+   private:
+     SpirvModule& m;
+-    uint32_t cb, image, slot;
++    uint32_t cb, image, slot, stageEnabled;
+     uint32_t U, I, F, B, U2, I2, F2, F4;
+     int32_t offsetX = 0, offsetY = 0;
+     uint32_t data(uint32_t vector);
+@@ -41,6 +41,7 @@ namespace dxvk {
+     uint32_t sampleMip(uint32_t coord, uint32_t mip, uint32_t sampler, uint32_t linear);
+     uint32_t filtered(uint32_t coord, uint32_t lod, uint32_t sampler, uint32_t linear);
+     uint32_t implicitLod(uint32_t dx, uint32_t dy);
++    uint32_t conditional(uint32_t condition, uint32_t value, uint32_t type, const std::function<uint32_t()>& emit);
+     uint32_t choose(uint32_t type, uint32_t cond, uint32_t a, uint32_t b);
+     uint32_t field(uint32_t value, uint32_t offset, uint32_t count);
+     uint32_t rgb565(uint32_t value);
+diff --git a/src/dxvk/dxvk_context.cpp b/src/dxvk/dxvk_context.cpp
+index e3cf54da..ee13c2a1 100644
+--- a/src/dxvk/dxvk_context.cpp
++++ b/src/dxvk/dxvk_context.cpp
+@@ -5747,6 +5747,22 @@ namespace dxvk {
+   void DxvkContext::updateShaderResources(const DxvkPipelineLayout* layout) {
+     std::array<DxvkDescriptorInfo, MaxNumActiveBindings> descriptors;
+ 
++    uint32_t bgraUavMask[2] = { 0, 0 };
++    VkShaderStageFlags virtualBcStages = 0;
++    uint32_t virtualBcTextures[4] = { };
++    const auto markVirtualBc = [&] (const auto& binding) {
++      virtualBcStages |= binding.stages;
++      const uint32_t stageSlot = binding.slot % DxbcStageBindingCount;
++      if (stageSlot >= DxbcResourceBindingIndex
++       && stageSlot < DxbcResourceBindingIndex + DxbcResourceBindingCount) {
++        const uint32_t textureSlot = stageSlot - DxbcResourceBindingIndex;
++        virtualBcTextures[textureSlot / 32] |= 1u << (textureSlot % 32);
++      }
++    };
++    const uint32_t uavBase = computeStageUavBindingOffset(
++      BindPoint == VK_PIPELINE_BIND_POINT_COMPUTE
++        ? DxbcProgramType::ComputeShader : DxbcProgramType::PixelShader);
++
+     // Assume that all bindings are active as a fast path
+     DxvkBindingMask bindMask;
+     bindMask.setFirst(layout->bindingCount());
+@@ -5770,6 +5786,8 @@ namespace dxvk {
+         
+         case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
+           if (res.imageView != nullptr && res.imageView->handle(binding.view) != VK_NULL_HANDLE) {
++            if (res.imageView->info().virtualBc)
++              markVirtualBc(binding);
+             descriptors[i].image.sampler     = VK_NULL_HANDLE;
+             descriptors[i].image.imageView   = res.imageView->handle(binding.view);
+             descriptors[i].image.imageLayout = res.imageView->imageInfo().layout;
+@@ -5811,6 +5829,11 @@ namespace dxvk {
+         
+         case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:
+           if (res.imageView != nullptr && res.imageView->handle(binding.view) != VK_NULL_HANDLE) {
++            if (res.imageView->info().bgraUav && binding.slot >= uavBase
++             && binding.slot < uavBase + DxbcUavBindingCount) {
++              uint32_t index = binding.slot - uavBase;
++              bgraUavMask[index / 32] |= 1u << (index % 32);
++            }
+             descriptors[i].image.sampler     = VK_NULL_HANDLE;
+             descriptors[i].image.imageView   = res.imageView->handle(binding.view);
+             descriptors[i].image.imageLayout = res.imageView->imageInfo().layout;
+@@ -5852,6 +5875,8 @@ namespace dxvk {
+            * keeps the descriptor bound and lets the shader's image-only Load
+            * path remain valid without inventing a sampler in DXBC. */
+           if (imageReady && (samplerReady || splitD3d11Binding)) {
++            if (res.imageView->info().virtualBc)
++              markVirtualBc(binding);
+             const VkDescriptorImageInfo dummy =
+               m_common->dummyResources().imageSamplerDescriptor(binding.view);
+             descriptors[i].image.sampler     = samplerReady
+@@ -5974,6 +5999,15 @@ namespace dxvk {
+       }
+     }
+ 
++    // Reset masks on unbind/rebind too, before pipeline-state validation.
++    setSpecConstant(BindPoint, BgraUavMaskLo, bgraUavMask[0]);
++    setSpecConstant(BindPoint, BgraUavMaskHi, bgraUavMask[1]);
++    // Reset on ordinary SRV rebinds too. The constant lets the driver remove
++    // atlas decoding entirely from stages that only use native textures.
++    setSpecConstant(BindPoint, VirtualBcShaderStages, virtualBcStages);
++    for (uint32_t i = 0; i < 4; i++)
++      setSpecConstant(BindPoint, VirtualBcTextureMask0 + i, virtualBcTextures[i]);
++
+     // Allocate and update descriptor set
+     auto& set = BindPoint == VK_PIPELINE_BIND_POINT_GRAPHICS ? m_gpSet : m_cpSet;
+ 
+diff --git a/src/dxvk/dxvk_image.cpp b/src/dxvk/dxvk_image.cpp
+index fb3815d5..5b5eb52a 100644
+--- a/src/dxvk/dxvk_image.cpp
++++ b/src/dxvk/dxvk_image.cpp
+@@ -407,7 +407,7 @@ namespace dxvk {
+     viewInfo.components       = m_info.swizzle;
+     viewInfo.subresourceRange = subresourceRange;
+ 
+-    if (m_info.usage == VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT) {
++    if (m_info.usage == VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT || m_info.bgraUav) {
+       viewInfo.components = {
+         VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY,
+         VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY };
+diff --git a/src/dxvk/dxvk_image.h b/src/dxvk/dxvk_image.h
+index 3895e6a6..7d4cc943 100644
+--- a/src/dxvk/dxvk_image.h
++++ b/src/dxvk/dxvk_image.h
+@@ -88,6 +88,11 @@ namespace dxvk {
+ 
+     /// Image view usage flags
+     VkImageUsageFlags usage = 0;
++    // RGBA storage view of BGRA bytes; shaders and clears swap R/B.
++    bool bgraUav = false;
++
++    // The SRV addresses a compressed-block atlas decoded by DXBC shaders.
++    bool virtualBc = false;
+     
+     /// Subresources to use in the view
+     VkImageAspectFlags aspect = 0;
+diff --git a/src/dxvk/dxvk_limits.h b/src/dxvk/dxvk_limits.h
+index eb2431e6..8e834037 100644
+--- a/src/dxvk/dxvk_limits.h
++++ b/src/dxvk/dxvk_limits.h
+@@ -15,7 +15,16 @@ namespace dxvk {
+     MaxNumActiveBindings        =   384,
+     MaxNumQueuedCommandBuffers  =    18,
+     MaxNumQueryCountPerPool     =   128,
+-    MaxNumSpecConstants         =    12,
++    // Slots 0..11 retain upstream/D3D9 meanings. Two extra words cover all
++    // 64 D3D11 UAV registers and participate in pipeline keys/state caches.
++    BgraUavMaskLo               =    12,
++    BgraUavMaskHi               =    13,
++    VirtualBcShaderStages      =    14,
++    VirtualBcTextureMask0      =    15,
++    VirtualBcTextureMask1      =    16,
++    VirtualBcTextureMask2      =    17,
++    VirtualBcTextureMask3      =    18,
++    MaxNumSpecConstants         =    19,
+     MaxUniformBufferSize        = 65536,
+     MaxVertexBindingStride      =  2048,
+     MaxPushConstantSize         =   128,

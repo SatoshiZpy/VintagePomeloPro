@@ -80,18 +80,26 @@ fp="$( { printf '%s\n%s\n%s\n%s\n' "$CFLAGS" "$CFLAGS_C" "${CFLAGS_EXTRA:-}" "$S
 fp_file="$OBJD/.cflags_fp"
 [ -f "$fp_file" ] && [ "$(cat "$fp_file" 2>/dev/null)" = "$fp" ] || { rm -rf "$OBJD"; mkdir -p "$OBJD"; }
 printf '%s\n' "$fp" > "$fp_file"
-N=0
-for s in $SRCS; do
+# Bounded parallelism; each TU has its own object/depfile. Keep the existing
+# dependency checks and cache fingerprint, and propagate any compiler failure.
+compile_dxvk_object() {
+    local s="$1" rel obj CF
     rel=${s#$DXVK_SRC/src/}
     obj="$OBJD/$(echo "$rel" | tr '/' '_').o"
-    arm64x_object_current "$obj" && continue
-    N=$((N+1))
+    arm64x_object_current "$obj" && return 0
     if [[ "$s" == *.c ]]; then CF="$CFLAGS_C"; else CF="$CFLAGS"; fi
     "$CLANG" --target=aarch64-w64-mingw32 -marm64x $CF -MD -MP -MF "$obj.d" -MT "$obj" -c "$s" -o "$obj" 2> "$obj.err" || {
-        echo "==== $rel FAIL:"; head -6 "$obj.err"; exit 1;
+        echo "DXVK compile failed: $rel"; head -6 "$obj.err"; return 1;
     }
-done
-log "compiled $N sources (total $(ls "$OBJD"/*.o 2>/dev/null | wc -l) objects)"
+}
+export -f arm64x_object_current compile_dxvk_object
+export DXVK_SRC OBJD CLANG CFLAGS CFLAGS_C
+workers=${JOBS:-2}
+[[ "$workers" =~ ^[1-9][0-9]*$ ]] || err "Invalid JOBS"
+# Dual-image compilation is memory intensive; this local lane has 4 GiB RAM.
+[ "$workers" -le 2 ] || workers=2
+printf '%s\n' "$SRCS" | xargs -r -d '\n' -P "$workers" -n 1 bash -c 'compile_dxvk_object "$1"' _
+log "DXVK translation units ready (total $(ls "$OBJD"/*.o 2>/dev/null | wc -l) objects)"
 
 # ── 4) 链接 (ld.lld arm64xpe; 源集合按 meson 权威清单) ──
 #   dxgi.dll  = common + dxgi 全部
@@ -143,7 +151,7 @@ link_profile() {
         "${objs[@]}" \
         "$BUILD/$dll.exports.o" \
         $extra_implib \
-        "$BUILD_DIR/wine-ohos-$WINE_ARCH/dlls/vulkan-1/aarch64-windows/libvulkan-1.a" \
+        "${DXVK_VULKAN_IMPLIB:-$BUILD_DIR/wine-ohos-$WINE_ARCH/dlls/vulkan-1/aarch64-windows/libvulkan-1.a}" \
         -L"$MGW/aarch64-w64-mingw32/lib" \
         -Wl,--start-group \
             "$MGW/aarch64-w64-mingw32/lib/libc++abi.a" \

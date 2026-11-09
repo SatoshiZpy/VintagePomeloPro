@@ -174,8 +174,8 @@ static HRESULT WINAPI gnu_x64_create_device(IDXGIAdapter *adapter,
             fflush(stdout);
             if (!symbol) return HRESULT_FROM_WIN32(error ? error : ERROR_PROC_NOT_FOUND);
         }
-        if (!load_dxvk64(L"C:\\dxvk64\\dxgi.dll")) return HRESULT_FROM_WIN32(GetLastError());
-        HMODULE d3d11 = load_dxvk64(L"C:\\dxvk64\\d3d11.dll");
+        if (!load_dxvk64(L"V:\\dxvk\\dxgi.dll")) return HRESULT_FROM_WIN32(GetLastError());
+        HMODULE d3d11 = load_dxvk64(L"V:\\dxvk\\d3d11.dll");
         if (!d3d11) return HRESULT_FROM_WIN32(GetLastError());
         union { FARPROC raw; CreateDeviceFn call; } entry;
         entry.raw = GetProcAddress(d3d11, "D3D11CreateDeviceAndSwapChain");

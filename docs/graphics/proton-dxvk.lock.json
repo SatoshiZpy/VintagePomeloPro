@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "dxvkCommit": "5dff1d7b3dc3c2cd7f51356b99213bcc427b1af9",
+  "wineBcDecoder": {
+    "commit": "f6492f848273ae3f4220151c8049e1202669cd49",
+    "path": "dlls/d3dx9_36/bcdec.h",
+    "gitBlobSha1": "1b57a45492641ea1d62b952bbddfea4e1e38bc9c",
+    "sha256": "ebfff36dd34ef7e9de508800cc24f7e2f78ffd77a958798244626eb9e34f67cf",
+    "url": "https://raw.githubusercontent.com/winehua/wine/f6492f848273ae3f4220151c8049e1202669cd49/dlls/d3dx9_36/bcdec.h"
+  },
+  "toolchain": {
+    "version": "20260826",
+    "archiveSha256": "cee8d2ce3da5145ce4dc882e70d0b0719a783d53a99752c60948fc0659975a65",
+    "bytes": 83880560
+  }
+}

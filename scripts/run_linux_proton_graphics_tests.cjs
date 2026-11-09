@@ -7,7 +7,7 @@ const root = home + '/proton-probe', profile = root + '/graphics-x64';
 const hash = data => crypto.createHash('sha256').update(data).digest('hex');
 const write = (name,data) => {fs.mkdirSync(path.dirname(name),{recursive:true});fs.writeFileSync(name,data);};
 const backend = Buffer.from('locked Wine Vulkan unix backend');
-const files = ['libproton_probe.so','libproton_vulkan.so','libvulkan_virtio.so'];
+const files = ['libproton_probe.so','libproton_vulkan.so','libvulkan_virtio.so','dxvk/d3d11.dll','dxvk/dxgi.dll'];
 for(const arch of ['aarch64-windows','x86_64-windows'])
   for(const name of ['winevulkan.dll','vulkan-1.dll','d3dcompiler_47.dll'])files.push(`wine/${arch}/${name}`);
 const payload = Object.fromEntries(files.map(name=>[name,Buffer.from('content:'+name)]));
@@ -39,11 +39,16 @@ const ensure=()=>exportsObject.ensureLinuxProtonGraphics(context);
     const bad=JSON.parse(JSON.stringify(manifest));mutate(bad);assert.throws(()=>exportsObject.validateLinuxProtonGraphics(bad));
   }
   write(root+'/package/'+manifest.backend.path,backend);write(root+'/prefix/user.reg','user data');
-  await ensure();assert.equal(writes,9);assert.equal(reads,9);
-  await ensure();assert.equal(writes,9);assert.equal(reads,9,'intact payload reused');
-  write(profile+'/libproton_probe.so','damage');await ensure();assert.equal(writes,10);
+  for(const name of ['dxvk/d3d11.dll','dxvk/dxgi.dll']) {
+    const incomplete=JSON.parse(JSON.stringify(manifest));
+    incomplete.files=incomplete.files.filter(file=>file.path!==name);
+    assert.throws(()=>exportsObject.validateLinuxProtonGraphics(incomplete));
+  }
+  await ensure();assert.equal(writes,files.length);assert.equal(reads,files.length);
+  await ensure();assert.equal(writes,files.length);assert.equal(reads,files.length,'intact payload reused');
+  write(profile+'/libproton_probe.so','damage');await ensure();assert.equal(writes,files.length+1);
   fs.rmSync(root+'/graphics',{recursive:true,force:true});write(root+'/graphics/libproton_vulkan.so','base reinstall');
-  await ensure();assert.equal(writes,10,'base repair must not remove companion profile');
+  await ensure();assert.equal(writes,files.length+1,'base repair must not remove companion profile');
   const name='wine/aarch64-windows/winevulkan.dll';write(profile+'/'+name,'damage');corrupt=name;
   await assert.rejects(ensure(),/校验失败/);assert.equal(fs.readFileSync(profile+'/'+name,'utf8'),'damage');corrupt='';await ensure();
   write(root+'/package/'+manifest.backend.path,'different version');const before=writes;

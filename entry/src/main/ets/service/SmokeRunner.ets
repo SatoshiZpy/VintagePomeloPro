@@ -474,6 +474,7 @@ export class SmokeRunner {
     this.currentStatus = '验证独立 GNU ARM64 Proton';
     this.notify();
     const stage = readSmokeText('/data/storage/el2/base/files/steamohos-native/proton-probe/stage').trim();
+    if (stage === 'dxvk11-x64') await LinuxGnuProtonComponent.ensureReady(this.context);
     if (stage === 'init-fresh') {
       writeSmokeText('/data/storage/el2/base/files/steamohos-native/proton-probe/stage', 'init');
       let raw: string;

@@ -17,8 +17,8 @@ available.update(r['name'] for r in manifest['files'])
 assert {r['name'] for r in manifest['files']} == {
     'psapi.dll','wevtsvc.dll','lsass.exe','wsock32.dll','mswsock.dll',
     'dwmapi.dll','dwrite.dll','uiautomationcore.dll','oleacc.dll',
-    'msvcp140_2.dll','vcruntime140_1.dll',
-    'dxva2.dll', 'jsproxy.dll', 'mscoree.dll', 'normaliz.dll', 'pdh.dll', 'winhttp.dll', 'wldap32.dll', 'schannel.dll', 'rsaenh.dll', 'credui.dll', 'esent.dll', 'ncrypt.dll', 'usp10.dll', 'wtsapi32.dll'}
+    'xinput9_1_0.dll', 'msvcp140_1.dll', 'msvcp140_2.dll','vcruntime140_1.dll',
+    'dxva2.dll', 'jsproxy.dll', 'mscoree.dll', 'normaliz.dll', 'pdh.dll', 'winhttp.dll', 'wldap32.dll', 'schannel.dll', 'rsaenh.dll', 'credui.dll', 'esent.dll', 'ncrypt.dll', 'usp10.dll', 'wtsapi32.dll', 'powrprof.dll', 'dbgeng.dll'}
 for row in manifest['files']:
     data = (raw/'bootstrap'/row['name']).read_bytes()
     assert len(data) == row['bytes'] and hashlib.sha256(data).hexdigest() == row['sha256']

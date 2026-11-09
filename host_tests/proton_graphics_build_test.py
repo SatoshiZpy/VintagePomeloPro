@@ -27,7 +27,7 @@ class NativeReceiptTests(unittest.TestCase):
                  'headers': {'header.h': self.digest('header.h')},
                  'outputSha256': self.digest(candidate.NATIVE+'/libsteamohos_gnu_child.so')}
         self.write(candidate.NATIVE+'/native-child-build.json', json.dumps(child).encode())
-        names = ['libproton_probe.so', 'libproton_vulkan.so', 'libvulkan_virtio.so']
+        names = ['libproton_probe.so', 'libproton_vulkan.so', 'libvulkan_virtio.so', 'dxvk/d3d11.dll', 'dxvk/dxgi.dll']
         names += [f'wine/{arch}-windows/{name}' for arch in ['aarch64', 'x86_64']
                   for name in ['winevulkan.dll', 'vulkan-1.dll', 'd3dcompiler_47.dll']]
         files = []
@@ -38,7 +38,12 @@ class NativeReceiptTests(unittest.TestCase):
                 relative = 'entry/src/main/resources/rawfile/linux-steam/bootstrap/native-game-support/'+name
             self.write(relative, contents)
             files.append(dict(path=name, bytes=len(contents), sha256=hashlib.sha256(contents).hexdigest()))
-        profile = dict(profile='dxvk-legacy-x64-native-memory-v1', files=files,
+        self.write('scripts/patches/dxvk-bgra-uav.patch', b'reviewed DXVK patch')
+        dxvk = dict(baseCommit='5dff1d7b3dc3c2cd7f51356b99213bcc427b1af9', architecture='arm64x',
+                    sources={'scripts/patches/dxvk-bgra-uav.patch': self.digest('scripts/patches/dxvk-bgra-uav.patch')},
+                    patchSha256=self.digest('scripts/patches/dxvk-bgra-uav.patch'),
+                    files=[row for row in files if row['path'].startswith('dxvk/')])
+        profile = dict(profile='dxvk-legacy-x64-native-memory-v1', files=files, dxvkBuild=dxvk,
                        sources={'source.cpp': self.digest('source.cpp')})
         self.write(candidate.PROFILE+'manifest.json', json.dumps(profile).encode())
     def write(self, relative, contents):
@@ -47,8 +52,20 @@ class NativeReceiptTests(unittest.TestCase):
         path.write_bytes(contents)
     def digest(self, relative):
         return hashlib.sha256((self.root/relative).read_bytes()).hexdigest()
+    def test_unrecorded_pass_profile_header_rejected(self):
+        self.write('entry/src/main/cpp/linux_steam/gnu_fixture/proton_vulkan_pass_profile.h', b'new instrumentation')
+        with self.assertRaisesRegex(ValueError, 'missing from native source receipts'):
+            candidate.validate_native()
     def test_valid_paired_outputs(self):
         candidate.validate_native()
+    def test_dxvk_patch_edit_requires_rebuild(self):
+        self.write('scripts/patches/dxvk-bgra-uav.patch', b'changed code')
+        with self.assertRaisesRegex(ValueError, 'Rebuild required'):
+            candidate.validate_native()
+    def test_dxvk_binary_replacement_rejected(self):
+        self.write(candidate.PROFILE+'dxvk/d3d11.dll', b'wrong DXVK')
+        with self.assertRaisesRegex(ValueError, 'DXVK payload differs'):
+            candidate.validate_native()
     def test_native_source_edit_requires_rebuild(self):
         self.write('source.cpp', b'edited after build')
         with self.assertRaisesRegex(ValueError, 'Rebuild required'):

@@ -14,3 +14,8 @@ proton-x64-network.exe: proton_x64_network_probe.c
 CLANG = /apps/harmony/sdk/default/openharmony/native/llvm/bin/clang
 native-memory-proxy.so: proton_native_memory_proxy.c
 	$(CLANG) --target=aarch64-linux-gnu -O2 -Wall -Wextra -Werror -shared -fPIC -nostdlib -fuse-ld=lld -Wl,-soname,libproton_vulkan.so $< -o $@
+
+.PHONY: proton-x64-bgra-uav
+proton-x64-bgra-uav: proton-x64-bgra-uav.exe
+proton-x64-bgra-uav.exe: proton_x64_bgra_uav.c
+	$(CC) -O2 -Wall -Wextra -Werror -static-libgcc -Wl,--no-insert-timestamp $< -o $@ -ldxguid

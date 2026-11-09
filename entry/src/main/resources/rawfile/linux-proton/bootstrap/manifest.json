@@ -10,6 +10,12 @@
       "sourcePath": "files/lib/wine/aarch64-windows/credui.dll"
     },
     {
+      "name": "dbgeng.dll",
+      "bytes": 851968,
+      "sha256": "8cd469930d18412dc261181ddda5fb2928cb93dec478ee66ed6fe5d90a12fbc4",
+      "sourcePath": "files/lib/wine/aarch64-windows/dbgeng.dll"
+    },
+    {
       "name": "dwmapi.dll",
       "sourcePath": "files/lib/wine/aarch64-windows/dwmapi.dll",
       "bytes": 655360,
@@ -52,6 +58,12 @@
       "sourcePath": "files/lib/wine/aarch64-windows/mscoree.dll"
     },
     {
+      "name": "msvcp140_1.dll",
+      "bytes": 589824,
+      "sha256": "33261496218c68160cae253ece41d3fed63301dc202955a371ec901239d4454c",
+      "sourcePath": "files/lib/wine/aarch64-windows/msvcp140_1.dll"
+    },
+    {
       "name": "msvcp140_2.dll",
       "sourcePath": "files/lib/wine/aarch64-windows/msvcp140_2.dll",
       "bytes": 655360,
@@ -86,6 +98,12 @@
       "bytes": 589824,
       "sha256": "7312b4627a7dffa4461d53f8659390cad625d50c1ecb12b1ef9b4280d5421d6b",
       "sourcePath": "files/lib/wine/aarch64-windows/pdh.dll"
+    },
+    {
+      "name": "powrprof.dll",
+      "bytes": 589824,
+      "sha256": "79e180cb59968cc432b9686681ee9431cb9adb2f4675b2335bbe196e3e0c2805",
+      "sourcePath": "files/lib/wine/aarch64-windows/powrprof.dll"
     },
     {
       "name": "psapi.dll",
@@ -152,6 +170,12 @@
       "bytes": 589824,
       "sha256": "63f9ca2de75fc4e5aadefa439a2fa6e0aa4176c8711276c10c30fdaae15a5515",
       "sourcePath": "files/lib/wine/aarch64-windows/wtsapi32.dll"
+    },
+    {
+      "name": "xinput9_1_0.dll",
+      "bytes": 655360,
+      "sha256": "67ad01a3e14eeaa8ff45d94d3f13e7c95c59bc2fe3d3b9c02aa8eb13d27e9cf4",
+      "sourcePath": "files/lib/wine/aarch64-windows/xinput9_1_0.dll"
     }
   ]
 }

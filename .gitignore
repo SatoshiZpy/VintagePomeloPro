@@ -16,6 +16,8 @@
 !entry/src/main/resources/rawfile/linux-proton/bootstrap/dwrite.dll
 !entry/src/main/resources/rawfile/linux-proton/bootstrap/uiautomationcore.dll
 !entry/src/main/resources/rawfile/linux-proton/bootstrap/oleacc.dll
+!entry/src/main/resources/rawfile/linux-proton/bootstrap/xinput9_1_0.dll
+!entry/src/main/resources/rawfile/linux-proton/bootstrap/msvcp140_1.dll
 !entry/src/main/resources/rawfile/linux-proton/bootstrap/msvcp140_2.dll
 !entry/src/main/resources/rawfile/linux-proton/bootstrap/vcruntime140_1.dll
 !entry/src/main/resources/rawfile/linux-proton/bootstrap/dxva2.dll
@@ -111,3 +113,8 @@ entry/src/main/resources/rawfile/linux-proton/gnu-proton.zip
 !entry/src/main/resources/rawfile/linux-proton/bootstrap/ncrypt.dll
 !entry/src/main/resources/rawfile/linux-proton/bootstrap/usp10.dll
 !entry/src/main/resources/rawfile/linux-proton/bootstrap/wtsapi32.dll
+
+!entry/src/main/resources/rawfile/linux-proton/bootstrap/powrprof.dll
+!entry/src/main/resources/rawfile/linux-proton/bootstrap/dbgeng.dll
+
+!entry/src/main/resources/rawfile/linux-proton/graphics-x64/dxvk/*.dll

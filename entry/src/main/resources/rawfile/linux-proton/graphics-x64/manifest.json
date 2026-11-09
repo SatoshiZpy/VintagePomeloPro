@@ -9,14 +9,24 @@
   },
   "files": [
     {
+      "path": "dxvk/d3d11.dll",
+      "bytes": 8342016,
+      "sha256": "06661e5625af45210600fb883279aa71809a23806e41137e3fc7a42ddb8d163a"
+    },
+    {
+      "path": "dxvk/dxgi.dll",
+      "bytes": 5648896,
+      "sha256": "28dcba6e7b994b90d6897d81b137558165b18ebd43f53de44c996fac75b7e1cc"
+    },
+    {
       "path": "libproton_probe.so",
-      "bytes": 299576,
-      "sha256": "9cbd1edca1480bd68e86635f3e13259f9c6e32b78f4570a8db112d6a0c7088ac"
+      "bytes": 299624,
+      "sha256": "8031763bb888b7a7358b4e7b06d0daf0ed665cb432026678fa38b32b603e9df0"
     },
     {
       "path": "libproton_vulkan.so",
-      "bytes": 156584,
-      "sha256": "7079b0d8bc2e2603be9c82cae0b4ccc665f8718f71359175c95604ff69cae0f7"
+      "bytes": 247560,
+      "sha256": "31fb9e78a94f0100be66bba83ffea723792e5ead0763665f3d40d6908d318782"
     },
     {
       "path": "libvulkan_virtio.so",
@@ -55,10 +65,10 @@
     }
   ],
   "sources": {
-    "scripts/build_linux_proton_x64_graphics.py": "fb436fd38fced53a5611a4c475ca18a837d15921eda0b5466d1cfe2a5008e811",
+    "scripts/build_linux_proton_x64_graphics.py": "e04cd7b654c1f8ab440f5e6323ba30268189b200daf6633cb45a2018cbd632f1",
     "ci/Makefile.proton-graphics": "51b7e30c09841217a159abdb02650c8d589cd222f30d51d65e0fcf9d4adfee4d",
-    "scripts/build_linux_proton_probe.py": "b1ee25474666678696bb0b73141fcd1a43209d9d96c4470bd2ab7bf749499926",
-    "entry/src/main/cpp/linux_steam/gnu_fixture/proton_vulkan_x64.cpp": "6ec21f5759c66d90d7b05d7800f24eebca61e2485d8d092ba24b4891d39901a3",
+    "scripts/build_linux_proton_probe.py": "11f0be21960eeb286acd264033559468f871b345689b5da524c759c37264ea9d",
+    "entry/src/main/cpp/linux_steam/gnu_fixture/proton_vulkan_x64.cpp": "8ae67dd7a18d66507ee33eeed0e093de72505a35aaa67c4ae53175eb2ccf9092",
     "entry/src/main/cpp/linux_steam/gnu_fixture/proton_vulkan_wsi.cpp": "fa2a262f0784aade663e87beab985244ffeb1218d21b6f75016f84c320436b30",
     "entry/src/main/cpp/linux_steam/gnu_fixture/posix_compat.c": "c32bdde6985f220c32440915697e52eed48735ed5a4c876a0cb009b772cf46c9",
     "entry/src/main/cpp/linux_steam/gnu_fixture/sysvipc_compat.c": "331a9577faa2bd1fcb20c57446cb850cf8130e92e69feee91a99dc06e9e32d84",
@@ -67,7 +77,7 @@
     "entry/src/main/cpp/linux_steam/gnu_fixture/socket_metadata.c": "27e73f4615eabb6da178fd0f897be3ce6aa64e27efe6e1def9e4190307e93061",
     "entry/src/main/cpp/linux_steam/gnu_fixture/exec_compat.cpp": "819428ff7b5eab8ff9ea0342aaaf1634b56e64c5775aa8c2c12da47c82357e27",
     "entry/src/main/cpp/linux_steam/gnu_fixture/syscall_compat.S": "05c114b61095cdfce0d1838b51eb3d7f7966ec0ad5b2e904fb5833141940a9ee",
-    "entry/src/main/cpp/linux_steam/native_loader.cpp": "225e197f016c06271ae449db3fb0421f5021a8d8855af7a30ccecb9f15d3fe0f",
+    "entry/src/main/cpp/linux_steam/native_loader.cpp": "ddfefe196e208cbf0b95e67b6f0b26c46cac41ce1da34f2e772714fde4c28d1c",
     "entry/src/main/cpp/linux_steam/native_loader_entry.S": "d09d1d7bfbba764145960486d9543c469cfcae84ebfc46ab8b3e5eaa4ef632e2",
     "entry/src/main/cpp/linux_steam/native_loader.h": "f78cafb2e7ebcf19681043d8b704b99c68d4a9785055ef430f5610ab94c82270",
     "entry/src/main/cpp/linux_steam/audio_bootstrap_relay.h": "fe66d700ff62df438f8827d39ba038a9a17d292da3d68f1cabc3d46d38e963be",
@@ -93,8 +103,12 @@
     "entry/src/main/cpp/linux_steam/gnu_fixture/proton_dsound_observer.h": "d7647f5fdb2b7212c83ef167e1be7b91aa9a58d24ae28b309af85880c07834ab",
     "entry/src/main/cpp/linux_steam/gnu_fixture/proton_exec_policy.h": "336a32ea3895b095f9b6ac400818f0af2aec9ccd45d8dbc23f1ae9b5efc90473",
     "entry/src/main/cpp/linux_steam/gnu_fixture/proton_file_mapping.h": "448fd6f2903892f6d258e548f9999beb25692860a40dce7753f448fe4a31e057",
+    "entry/src/main/cpp/linux_steam/gnu_fixture/proton_transport_profile.h": "8921db7034638f6031d15bfd3329c041052c8660d13061f08fb9e6779db44445",
     "entry/src/main/cpp/linux_steam/gnu_fixture/proton_vulkan_addressing.h": "db7c29d181b6eefde6828503d8a753b729fe95dcb71bb99a0fbb66cd293fcb06",
     "entry/src/main/cpp/linux_steam/gnu_fixture/proton_vulkan_bc_features.h": "ce919b210b9ffbe504899c04b554627407ba2d0ba7b008e589405f4df8c9c21b",
+    "entry/src/main/cpp/linux_steam/gnu_fixture/proton_vulkan_bgra_usage.h": "1b484ecdc7cc25e17d4ffa2e1305ccba4fd0f63afaaf5720dabe512ab58ff99c",
+    "entry/src/main/cpp/linux_steam/gnu_fixture/proton_vulkan_pass_profile.h": "3c87d8bb9409fac011be65395ce31e99d14d54e74d9029f41eddb64ec5ea81a6",
+    "entry/src/main/cpp/linux_steam/gnu_fixture/proton_vulkan_profile.h": "a6992dd907454d2de8a893df879ac8534faf5d48943eec6a445577fb3b8c94be",
     "entry/src/main/cpp/linux_steam/gnu_fixture/runtime_mtree.h": "3fadc927aa904b41d331ecc25803ee5d02cead5e48450714179673d30e09cf45",
     "entry/src/main/cpp/linux_steam/gnu_fixture/sdl3_virtual_abi.h": "d49ed146cc43ec255a972203d1c2dc5b72b74bbd6c7565bc2ec58a0aa22dcbd7",
     "entry/src/main/cpp/linux_steam/gnu_fixture/steamclient_probe.h": "5b8ee45797420b54ca876a947773bd9d7dc1abe5f052e2ab046966eab19055c3",
@@ -106,6 +120,7 @@
     "entry/src/main/cpp/linux_steam/launch_wire.h": "3ffba763146ed99cb0339ace2e0a8ba904e345e67ae6a8e6ffa9b3067149c0a1",
     "entry/src/main/cpp/linux_steam/native_buffer_probe.h": "790a6cea6fea05db2a65f3d03d5151ed344ab2834ab893411b8f1b51dd1368c8",
     "entry/src/main/cpp/linux_steam/native_exec.h": "ed6fcaed80ad63fb8364d1e022a2493ca75b7d814b18eb7fb1d5a4e4971dc999",
+    "entry/src/main/cpp/linux_steam/native_exec_ranges.h": "28bb83ed19ea5090e3ad3db548fee534b4d9cc3baf9c907d1ca3440895708a7e",
     "entry/src/main/cpp/linux_steam/native_kernel_maps.h": "29fbf6336954d08523ae02fcb19e5233108f91a7ca131637a2d15e2da9e975dd",
     "entry/src/main/cpp/linux_steam/native_x11_endpoint.h": "08d5a4a5da562934fb2934f1381e163adcd0e78fa7127ba50285b17ad7ea5e61",
     "entry/src/main/cpp/linux_steam/proton_game_paths.h": "a53e53da6562d653e77336aed8d8e75cba17e4bd269bf34365db959a6be5f072",
@@ -132,21 +147,65 @@
   "probeBuild": {
     "sources": {
       "exec_probe.cpp": "da21f08e86ddc99f0c01ff2f06013225b34539fe5023990fdf98875deb117128",
-      "filesystem_probe.c": "9bba962b5a114a1f5f2bba8ccc94cf3e41bd67cfdfaf70048571ff52ea03b579",
+      "filesystem_probe.c": "946ddef9ff9ee9b75e72afea35e4db8ae27f6f1a4f362ede1da8fc85480831dd",
       "posix_probe.c": "bbf860d2fc54e144525798fa5c18577566e7658ff18cae7261583667e78177ea",
       "syscall_probe.S": "2944fd53c5f207227894b197c464caf613305926897bb06dbe0ba9b92937ea50"
     },
-    "baseManifest": "b6f594ddaef1d4909036a882c3db711f931db23fb7fa9f47ea379ab30a6c35c5",
+    "baseManifest": "822dc925499181097e020378965b462657ccc10225b15dacd4b1412e617869ea",
     "objects": {
       "sysvipc_compat.c.o": "d6ba4cb15ac1f1a661ed11845640e736bb812f9a6ba16511fbfe385c0ccb9d16",
       "popen_compat.c.o": "b241a5113ace012f8b44b6e0c98e4b46de84a75ad9962b49022683ce51b8d6ec",
       "socket_metadata.c.o": "0db8f2c3fb0d65783f123e0229b834dd1dbf2c040357af870edf22a541e242ee",
-      "native_loader.cpp.o": "58f052fc37097c8bfa5f58c4c66a31d2e00976956afee60b7ae21dca7ae49f77",
+      "native_loader.cpp.o": "f340bc201aba333a972bbbe1745719ca56413e215d75e1e50f01b7306358f73d",
       "native_loader_entry.S.o": "a50dc0178d4dc7e343509a3e48805aa9ab7aa094748f99c746a78fea59e6c272"
     },
     "compilers": {
       "aarch64-linux-gnu-gcc-15": "50d0961827e521a7c06d7794d4b15282559a117d365a149aaca5726917ab1603",
       "aarch64-linux-gnu-g++-15": "ceb85571c9e8f663044c52232059d1e0d32cbb0992e5d1651d0cfde2efc1e075"
     }
+  },
+  "dxvkBuild": {
+    "schemaVersion": 1,
+    "baseCommit": "5dff1d7b3dc3c2cd7f51356b99213bcc427b1af9",
+    "patchSha256": "d8432704ba104bddda5af53bd77d7f64e853b78a89cf58af33e52de7d32801ba",
+    "sourceTreeSha256": "d18d05a1b90da03718e08c7d72308c4fc7bc6aecd9f6eb886f33ea42b1a4528b",
+    "architecture": "arm64x",
+    "sources": {
+      "docs/graphics/proton-dxvk.lock.json": "6aeb2ebd22855506ab4564e2deddc214421306a920cf747b6147ca7027940506",
+      "scripts/patches/dxvk-bgra-uav.patch": "d8432704ba104bddda5af53bd77d7f64e853b78a89cf58af33e52de7d32801ba",
+      "scripts/build_proton_dxvk.py": "ed303052b7f9a44b3c51fed9e72064218ded4c100a6ece81343643f3a54ca1ef",
+      "scripts/build_dxvk_arm64x.sh": "ff3098bc5f454c44d137f0ca9af13a512e8a13560006425df284011ffdf8b687",
+      "scripts/arm64x_build_cache.sh": "2ee5668c87e7894a0eb34fc0c866446f3ead86ced182983ab4a63b5000d1634b",
+      "scripts/env.sh": "638f2f4fbe1df56cd50983f026aee71c085cd0c694830705b082e6c4ab2e5d27",
+      "ci/Makefile.proton-dxvk": "505dfd36f1b030998a6284cdbf94442ed8ec5d2e16b88786f5ff73a21faf4033"
+    },
+    "compilerSha256": "bab7f174d7e136ae093ad232d5a894ee00f0a8f9051bcff4eb6a70c132898248",
+    "vulkanImportDefinitionSha256": "d5057617b25076730ee1125675e62d588301c398b1090e4c79a4937ec77e57f2",
+    "wineBcDecoder": {
+      "commit": "f6492f848273ae3f4220151c8049e1202669cd49",
+      "path": "dlls/d3dx9_36/bcdec.h",
+      "gitBlobSha1": "1b57a45492641ea1d62b952bbddfea4e1e38bc9c",
+      "sha256": "ebfff36dd34ef7e9de508800cc24f7e2f78ffd77a958798244626eb9e34f67cf",
+      "url": "https://raw.githubusercontent.com/winehua/wine/f6492f848273ae3f4220151c8049e1202669cd49/dlls/d3dx9_36/bcdec.h"
+    },
+    "toolchain": {
+      "version": "20260826",
+      "archiveSha256": "cee8d2ce3da5145ce4dc882e70d0b0719a783d53a99752c60948fc0659975a65",
+      "bytes": 83880560
+    },
+    "compilerBackendSha256": "bab7f174d7e136ae093ad232d5a894ee00f0a8f9051bcff4eb6a70c132898248",
+    "files": [
+      {
+        "path": "dxvk/d3d11.dll",
+        "bytes": 8342016,
+        "sha256": "06661e5625af45210600fb883279aa71809a23806e41137e3fc7a42ddb8d163a"
+      },
+      {
+        "path": "dxvk/dxgi.dll",
+        "bytes": 5648896,
+        "sha256": "28dcba6e7b994b90d6897d81b137558165b18ebd43f53de44c996fac75b7e1cc"
+      }
+    ],
+    "scope": "complete DXVK Legacy ARM64X build; pinned GE Wine and Venus unchanged"
   }
 }

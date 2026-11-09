@@ -7,7 +7,7 @@ interface GraphicsManifest { schemaVersion: number; profile: string; backend: Gr
 const ROOT = '/data/storage/el2/base/files/steamohos-native/proton-probe';
 const RAW = 'linux-proton/graphics-x64';
 export function validateLinuxProtonGraphics(manifest: GraphicsManifest): void {
-  const required = new Set<string>(['libproton_probe.so', 'libproton_vulkan.so', 'libvulkan_virtio.so']);
+  const required = new Set<string>(['libproton_probe.so', 'libproton_vulkan.so', 'libvulkan_virtio.so', 'dxvk/d3d11.dll', 'dxvk/dxgi.dll']);
   for (const arch of ['aarch64-windows', 'x86_64-windows']) {
     for (const name of ['winevulkan.dll', 'vulkan-1.dll', 'd3dcompiler_47.dll']) required.add(`wine/${arch}/${name}`);
   }

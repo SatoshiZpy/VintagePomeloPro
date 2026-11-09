@@ -66,6 +66,11 @@ def main():
             dest=RAW/'wine'/Path(name).parent.name/Path(name).name;dest.parent.mkdir(parents=True,exist_ok=True)
             dest.write_bytes(archive.extractfile(member).read());needed.remove(name)
     if needed:raise ValueError('Incomplete graphics PE closure')
+    dxvk=json.loads((out.parent/'proton-dxvk-build/dxvk-build.json').read_text())
+    for name,digest in dxvk['sources'].items():
+        if sha(ROOT/name)!=digest:raise ValueError('DXVK source changed after rebuild: '+name)
+    for row in dxvk['files']:
+        if sha(RAW/row['path'])!=row['sha256']:raise ValueError('DXVK payload changed after rebuild')
     files=[]
     for src in sorted(RAW.rglob('*')):
         if src.is_file() and src.name!='manifest.json':files.append({'path':str(src.relative_to(RAW)),'bytes':src.stat().st_size,'sha256':sha(src)})
@@ -77,7 +82,7 @@ def main():
     runtime = verify_gnu_symbols([RAW/'libproton_probe.so', RAW/'libproton_vulkan.so'], a.link_dir, cc.with_name(cc.name.replace('gcc', 'readelf')))
     sources=[Path(__file__),ROOT/'ci/Makefile.proton-graphics',ROOT/'scripts/build_linux_proton_probe.py',FIXTURE/'proton_vulkan_x64.cpp',FIXTURE/'proton_vulkan_wsi.cpp',*inputs,*sorted(NATIVE.rglob('*.h'))]
     manifest={'schemaVersion':1,'profile':'dxvk-legacy-x64-native-memory-v1','distributionSha512':dist['sha512'],'backend':{k:backend[k] for k in ['path','bytes','sha256']},'files':sorted(files,key=lambda x:x['path']),
-        'sources':{str(x.relative_to(ROOT)):sha(x) for x in sources},'gnuCompilerSha256':sha(cc),'gnuRuntime':runtime,'probeBuild':json.loads((out/'probe/posix-probe-identity.json').read_text())['buildInputs']}
+        'sources':{str(x.relative_to(ROOT)):sha(x) for x in sources},'gnuCompilerSha256':sha(cc),'gnuRuntime':runtime,'probeBuild':json.loads((out/'probe/posix-probe-identity.json').read_text())['buildInputs'],'dxvkBuild':dxvk}
     (RAW/'manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')
     # Match the repository CMake target's complete translation-unit set.
     clang=a.sdk/'native/llvm/bin/clang++';sysroot=a.sdk/'native/sysroot'

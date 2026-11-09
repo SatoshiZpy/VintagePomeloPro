@@ -168,6 +168,13 @@ filesystem = 'static int CloudLink(const char*,const char*);\n' + filesystem
 linkpath = 'static int CloudLinkPath(const char *path,char link[PATH_MAX],char target[PATH_MAX],const char **suffix) {'
 assert filesystem.count(linkpath) == 1
 filesystem = filesystem.replace(linkpath, linkpath + r'''
+    const char *x64Graphics=getenv("STEAMOHOS_PROTON_X64_GRAPHICS");
+    const char *vdrive="/data/storage/el2/base/files/steamohos-native/proton-probe/prefix/dosdevices/v:";
+    if(path && x64Graphics && !strcmp(x64Graphics,"1") && Below(path,vdrive)) {
+        strcpy(link,vdrive);
+        strcpy(target,"/data/storage/el2/base/files/steamohos-native/proton-probe/graphics-x64");
+        *suffix=path+strlen(vdrive);return 3;
+    }
     const char *game=getenv("STEAMOHOS_PROTON_GAME_ROOT");
     const char *selected=getenv("STEAMOHOS_PROTON_GAME_DRIVE");
     const char *driveRoot=getenv("STEAMOHOS_PROTON_DRIVE_ROOT");

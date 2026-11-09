@@ -559,9 +559,9 @@ std::string ProbeGnuProton(const std::string& runtime, bool forkBackend, const s
         if (gameRequested || initializeRequested) {
             for (const char* name : {"psapi.dll", "wevtsvc.dll", "lsass.exe", "wsock32.dll", "mswsock.dll",
                                      "dwmapi.dll", "dwrite.dll", "uiautomationcore.dll", "oleacc.dll",
-                                     "msvcp140_2.dll", "vcruntime140_1.dll",
+                                     "xinput9_1_0.dll", "msvcp140_1.dll", "msvcp140_2.dll", "vcruntime140_1.dll",
                                      "dxva2.dll", "jsproxy.dll", "mscoree.dll", "normaliz.dll",
-                                     "pdh.dll", "winhttp.dll", "wldap32.dll", "schannel.dll", "rsaenh.dll", "credui.dll", "esent.dll", "ncrypt.dll", "usp10.dll", "wtsapi32.dll"})
+                                     "pdh.dll", "winhttp.dll", "wldap32.dll", "schannel.dll", "rsaenh.dll", "credui.dll", "esent.dll", "ncrypt.dll", "usp10.dll", "wtsapi32.dll", "powrprof.dll", "dbgeng.dll"})
                 if (!LoaderReference(root + "/bootstrap/" + name,
                     root + "/prefix/drive_c/windows/system32/" + name))
                     return failure("proton_bootstrap_module_missing_or_changed", true);
@@ -587,13 +587,14 @@ std::string ProbeGnuProton(const std::string& runtime, bool forkBackend, const s
             environment.emplace_back("STEAMOHOS_PROTON_NATIVE_EGL=1");
         }
         if (x64Graphics) {
-            const std::string profile=root+"/graphics-x64", dxvk=root+"/prefix/drive_c/dxvk64";
-            struct stat st{};
-            if((mkdir(dxvk.c_str(),0700)&&errno!=EEXIST)||lstat(dxvk.c_str(),&st)||!S_ISDIR(st.st_mode)||st.st_uid!=getuid())
-                return failure("proton_x64_graphics_directory_failed",true);
-            for(const char* name:{"d3d11.dll","dxgi.dll","libc++.dll","libunwind.dll"})
-                if(!LoaderReference(std::string("/data/storage/el2/base/files/wine/dxvk/legacy/x64/")+name,dxvk+'/'+name))
-                    return failure("proton_x64_dxvk_missing_or_changed",true);
+            const std::string profile=root+"/graphics-x64";
+            // The separately hash-verified DXVK rebuild lives in the managed
+            // graphics profile. V: avoids overwriting an older prefix DLL.
+            if (!CDriveRecord(root, 'v', profile, true))
+                return failure("proton_x64_graphics_drive_failed",true);
+            for(const char* name:{"d3d11.dll","dxgi.dll"})
+                if(access((profile+"/dxvk/"+name).c_str(),R_OK))
+                    return failure("proton_x64_dxvk_missing",true);
             for(const char* name:{"winevulkan.dll","vulkan-1.dll","d3dcompiler_47.dll"})
                 if(!LoaderReference(profile+"/wine/aarch64-windows/"+name,root+"/prefix/drive_c/windows/system32/"+name))
                     return failure("proton_x64_wine_module_missing_or_changed",true);
@@ -618,7 +619,7 @@ std::string ProbeGnuProton(const std::string& runtime, bool forkBackend, const s
                 environment.emplace_back(std::string(name)+"=1");
             environment.emplace_back("STEAMOHOS_PROTON_NATIVE_VULKAN=1");
             if (gameRequested) {
-                environment.emplace_back(x64Graphics?"WINEPATH=C:\\dxvk64":"WINEPATH=C:\\dxvk26");
+                environment.emplace_back(x64Graphics?"WINEPATH=V:\\dxvk":"WINEPATH=C:\\dxvk26");
             }
             environment.emplace_back("DXVK_LOG_PATH="+root+"/tmp");
             environment.emplace_back("DXVK_LOG_LEVEL=info");
