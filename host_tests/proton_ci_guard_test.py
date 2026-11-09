@@ -13,6 +13,17 @@ import ci_proton_graphics as ci
 
 
 class GuardTest(unittest.TestCase):
+    def test_ohpm_project_includes_entry_before_install(self):
+        workflow = (ci.ROOT / ci.reuse.WORKFLOW).read_bytes()
+        with tempfile.TemporaryDirectory() as tmp, patch.object(ci, 'ROOT', Path(tmp)):
+            source = Path(tmp) / ci.reuse.WORKFLOW
+            source.parent.mkdir(parents=True); source.write_bytes(workflow)
+            ci.provision_arkts()
+            project = ci.read(Path(tmp) / 'build-profile.json5')
+            self.assertEqual(project['modules'][0]['srcPath'], './entry')
+            self.assertEqual(project['app']['signingConfigs'], [])
+            self.assertEqual(project['app']['products'][0]['targetSdkVersion'], '6.1.0(23)')
+
     def test_api_redirect_never_forwards_github_token(self):
         source = 'https://github.com/owner/repo/releases/download/tag/input.hap'
         api = 'https://api.github.com/repos/owner/repo/releases/assets/123'

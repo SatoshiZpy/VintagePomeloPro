@@ -134,6 +134,14 @@ def file_hash(path, algorithm):
         return hashlib.file_digest(f, algorithm).hexdigest()
 
 
+def provision_arkts():
+    # Same unsigned project configuration as the full CI lane and local
+    # packager. ohpm --all needs modules[] before it can discover entry.
+    workflow = (ROOT / reuse.WORKFLOW).read_text()
+    text = workflow.split("cat > build-profile.json5 <<'JSON5'", 1)[1].split('          JSON5', 1)[0]
+    profile.save(ROOT / 'build-profile.json5', json.loads(text))
+
+
 def prepare_inputs(cache, local_base=None):
     lock = guard()
     base = Path('/input/base')
@@ -191,6 +199,7 @@ def prepare_inputs(cache, local_base=None):
                    dirty=False, image=lock['container'],
                    branding=dict(name='HMDeck', sources=profile.BRANDING_INPUTS))
     profile.save(ROOT / 'ci-artifacts/graphics-input.json', receipt)
+    provision_arkts()
     print('PASS: clean source scope, base HAP, GNU providers and pinned external inputs')
 
 

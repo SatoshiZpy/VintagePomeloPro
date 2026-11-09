@@ -74,12 +74,16 @@ jobs:
           done
           /tmp/proton_vulkan_profile-test disabled
           /apps/harmony/tool/node/bin/node scripts/run_local_tests.cjs
-      - name: Rebuild DXVK and complete GNU graphics native targets
-        run: make -f ci/Makefile.proton-ci proton-ci-rebuild
       - name: Install locked ArkTS dependencies
         run: |
           ohpm install --all
           git diff --exit-code -- oh-package.json5 oh-package-lock.json5 entry/oh-package.json5 entry/oh-package-lock.json5
+          test -d oh_modules
+          for module in libentry.so libsteamdecompress.so libsmoke_napi.so; do
+            test -d "entry/oh_modules/$module"
+          done
+      - name: Rebuild DXVK and complete GNU graphics native targets
+        run: make -f ci/Makefile.proton-ci proton-ci-rebuild
       - name: Build and verify API 23 ARM64 HAP
         run: make -f ci/Makefile.proton-ci proton-ci-package
       - name: Upload unsigned HAP and build provenance
