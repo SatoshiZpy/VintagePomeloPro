@@ -40,8 +40,26 @@ jobs:
           test "$(aarch64-linux-gnu-gcc -dumpversion)" = 15
           # Check the entire adapter's include closure before the DXVK build.
           aarch64-linux-gnu-g++ -fsyntax-only -Wall -Wextra -Werror -Wno-misleading-indentation entry/src/main/cpp/linux_steam/gnu_fixture/proton_vulkan_x64.cpp
+      - name: Restore pinned download cache
+        uses: actions/cache/restore@v4
+        id: downloads
+        with:
+          path: |
+            /input/base/entry/build/default/outputs/default/entry-default-unsigned.hap
+            /data/proton-ci/GE-Proton11-11-aarch64.tar.gz
+            /data/proton-ci/tools/llvm-mingw.tar.xz
+          key: proton-downloads-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('docs/graphics/proton-ci-profile.lock.json', 'docs/graphics/proton-dxvk.lock.json', 'docs/linux-steam/gnu-proton-probe.lock.json') }}
       - name: Verify checkout scope and restore locked build inputs
         run: python3 scripts/ci_proton_graphics.py prepare
+      - name: Cache verified downloads
+        if: steps.downloads.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            /input/base/entry/build/default/outputs/default/entry-default-unsigned.hap
+            /data/proton-ci/GE-Proton11-11-aarch64.tar.gz
+            /data/proton-ci/tools/llvm-mingw.tar.xz
+          key: ${{ steps.downloads.outputs.cache-primary-key }}
       - name: Test graphics compatibility and nonblocking samplers
         run: |
           set -euo pipefail

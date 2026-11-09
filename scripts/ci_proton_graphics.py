@@ -7,12 +7,15 @@ This lane never changes the app-only reuse policy or claims a full Wine rebuild.
 """
 import argparse
 import hashlib
+import http.client
 import io
 import json
 from pathlib import Path
 import shutil
 import subprocess
 import tarfile
+import time
+import urllib.error
 import urllib.request
 import zipfile
 
@@ -74,11 +77,28 @@ def download(url, target, digest, algorithm='sha256', size=None):
     pending = target.with_suffix(target.suffix + '.pending')
     # Sources are pinned public HTTPS artifacts; never attach GitHub credentials
     # to redirected release storage requests.
-    with urllib.request.urlopen(url, timeout=120) as src, pending.open('wb') as dst:
-        shutil.copyfileobj(src, dst, 1024 * 1024)
-    if (size is not None and pending.stat().st_size != size) or file_hash(pending, algorithm) != digest:
-        raise ValueError('Downloaded input does not match lock: ' + target.name)
-    pending.replace(target)
+    for attempt in range(4):
+        try:
+            with urllib.request.urlopen(url, timeout=120) as src, pending.open('wb') as dst:
+                shutil.copyfileobj(src, dst, 1024 * 1024)
+        except (urllib.error.URLError, TimeoutError, ConnectionError, http.client.IncompleteRead) as exc:
+            pending.unlink(missing_ok=True)
+            if isinstance(exc, urllib.error.HTTPError) and exc.code not in (408, 429, 500, 502, 503, 504):
+                raise
+            if attempt == 3:
+                raise
+            delay = (2, 5, 10)[attempt]
+            reason = f'HTTP {exc.code}' if isinstance(exc, urllib.error.HTTPError) else type(exc).__name__
+            print(f'Retrying {target.name}: {reason}; attempt {attempt + 2}/4 in {delay}s', flush=True)
+            time.sleep(delay)
+            continue
+        try:
+            if (size is not None and pending.stat().st_size != size) or file_hash(pending, algorithm) != digest:
+                raise ValueError('Downloaded input does not match lock: ' + target.name)
+            pending.replace(target)
+            return
+        finally:
+            pending.unlink(missing_ok=True)
 
 
 def file_hash(path, algorithm):
