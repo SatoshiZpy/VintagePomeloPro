@@ -32,6 +32,9 @@ jobs:
           set -euo pipefail
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
           git submodule update --init --recursive --depth=1 -- thirdparty/dxvk
+          # Recorded patch uses 8-digit blob IDs; shallow Git defaults to 7.
+          # Keep the existing exact-byte patch verification deterministic.
+          git -C thirdparty/dxvk config core.abbrev 8
           apt-get update
           apt-get install -y --no-install-recommends gcc-aarch64-linux-gnu g++-aarch64-linux-gnu libvulkan-dev glslang-tools
           test "$(aarch64-linux-gnu-gcc -dumpversion)" = 15
