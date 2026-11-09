@@ -1,7 +1,7 @@
 # CI rebuild of the device-tested GNU x64 profile. Other runtimes retain the
 # locked full-build provenance; the app-only guard is not weakened.
 CACHE ?= /data/proton-ci
-GNU_CC ?= /usr/bin/aarch64-linux-gnu-gcc-15
+GNU_CC ?= /usr/bin/aarch64-linux-gnu-gcc
 LLVM_MINGW := $(CACHE)/tools/llvm-mingw-20260826-ucrt-ubuntu-22.04-x86_64
 .PHONY: proton-ci-rebuild proton-ci-package
 proton-ci-rebuild:
